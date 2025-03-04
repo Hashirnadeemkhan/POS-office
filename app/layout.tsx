@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import Sidebar from "../src/components/Sidebar";
+import { Toaster } from "@/components/ui/sonner"
 
 
 const inter = Inter({ subsets: ["latin"] });
@@ -25,6 +26,7 @@ export default function RootLayout({
         {/* Main Content - Takes up remaining space on the right */}
         <main className="flex-1 p-4 max-w-7xl overflow-y-auto">
           {children}
+          <Toaster />
         </main>
       </body>
     </html>
