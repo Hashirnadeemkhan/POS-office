@@ -1,6 +1,5 @@
 // @/lib/firebase.js
 import { initializeApp } from "firebase/app";
-import { getAnalytics, isSupported } from "firebase/analytics";
 import { getFirestore } from "firebase/firestore";
 
 // Your Firebase configuration
@@ -20,15 +19,5 @@ const app = initializeApp(firebaseConfig);
 // Initialize Firestore (safe for both server and client)
 export const db = getFirestore(app);
 
-// Initialize Analytics only on the client side
-let analytics;
-if (typeof window !== "undefined") {
-  isSupported().then((supported) => {
-    if (supported) {
-      analytics = getAnalytics(app);
-    }
-  });
-}
-
-// Export app and analytics for use elsewhere if needed
-export { app, analytics };
+// Export app for use elsewhere if needed
+export { app };

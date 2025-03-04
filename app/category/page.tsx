@@ -1,139 +1,133 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Button } from "@/components/ui/button"
-import { PlusCircle, Pencil, Trash2 } from "lucide-react"
-import { AddCategoryModal } from "@/src/components/AddCategoryModal"
-import { EditCategoryModal } from "@/src/components/Edit-category-dailog"
-import { DeleteCategoryDialog } from "@/src/components/Delete-category-dialog"
-import { toast } from "sonner"
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, where } from "firebase/firestore"
-import { db } from "@/lib/firebase" // Ensure this matches your Firebase config file
+import { useState, useEffect } from "react";
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { PlusCircle, Pencil, Trash2 } from "lucide-react";
+import { AddCategoryModal } from "@/src/components/AddCategoryModal";
+import { EditCategoryModal } from "@/src/components/Edit-category-dailog";
+import { DeleteCategoryDialog } from "@/src/components/Delete-category-dialog";
+import { toast } from "sonner";
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, where } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { useFirebaseAnalytics } from "@/lib/firebase-analytics";
 
 interface Category {
-  id: string
-  name: string
-  description: string
+  id: string;
+  name: string;
+  description: string;
 }
 
 export default function CategoryPage() {
-  const [categories, setCategories] = useState<Category[]>([])
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false)
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
-  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [hasSubcategories, setHasSubcategories] = useState(false)
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasSubcategories, setHasSubcategories] = useState(false);
 
-  // Fetch categories on mount (similar to AdminDashboard)
+  // Initialize Firebase Analytics (runs only in browser)
+  useFirebaseAnalytics();
+
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const q = query(collection(db, "categories"), orderBy("name"))
-        const querySnapshot = await getDocs(q)
+        const q = query(collection(db, "categories"), orderBy("name"));
+        const querySnapshot = await getDocs(q);
         const categoriesList = querySnapshot.docs.map((doc) => ({
           id: doc.id,
           name: doc.data().name,
           description: doc.data().description || "",
-        }))
-        setCategories(categoriesList)
-        setIsLoading(false)
+        }));
+        setCategories(categoriesList);
+        setIsLoading(false);
       } catch (error) {
-        console.error("Error fetching categories:", error)
-        toast.error("Failed to load categories.")
-        setIsLoading(false)
+        console.error("Error fetching categories:", error);
+        toast.error("Failed to load categories.");
+        setIsLoading(false);
       }
-    }
+    };
 
-    fetchCategories()
-  }, []) // Empty dependency array ensures it runs once on mount
+    fetchCategories();
+  }, []);
 
-  // Add a new category
   const handleAddCategory = async (name: string, description: string) => {
     try {
       const docRef = await addDoc(collection(db, "categories"), {
         name,
         description: description || "",
-      })
-      setCategories([...categories, { id: docRef.id, name, description: description || "" }])
-      toast.success(`${name} has been added successfully.`)
+      });
+      setCategories([...categories, { id: docRef.id, name, description: description || "" }]);
+      toast.success(`${name} has been added successfully.`);
     } catch (error) {
-      console.error("Error adding category:", error)
-      toast.error("Failed to add category.")
+      console.error("Error adding category:", error);
+      toast.error("Failed to add category.");
     }
-  }
+  };
 
-  // Update an existing category
   const handleUpdateCategory = async (id: string, name: string, description: string) => {
     try {
-      const categoryRef = doc(db, "categories", id)
-      await updateDoc(categoryRef, { name, description: description || "" })
-      setCategories(categories.map((cat) => (cat.id === id ? { id, name, description } : cat)))
-      toast.success(`${name} has been updated successfully.`)
+      const categoryRef = doc(db, "categories", id);
+      await updateDoc(categoryRef, { name, description: description || "" });
+      setCategories(categories.map((cat) => (cat.id === id ? { id, name, description } : cat)));
+      toast.success(`${name} has been updated successfully.`);
     } catch (error) {
-      console.error("Error updating category:", error)
-      toast.error("Failed to update category.")
+      console.error("Error updating category:", error);
+      toast.error("Failed to update category.");
     }
-  }
+  };
 
-  // Check if category has subcategories
   const checkForSubcategories = async (categoryId: string) => {
     try {
-      const q = query(collection(db, "subcategories"), where("categoryId", "==", categoryId))
-      const querySnapshot = await getDocs(q)
-      return !querySnapshot.empty
+      const q = query(collection(db, "subcategories"), where("categoryId", "==", categoryId));
+      const querySnapshot = await getDocs(q);
+      return !querySnapshot.empty;
     } catch (error) {
-      console.error("Error checking subcategories:", error)
-      return false
+      console.error("Error checking subcategories:", error);
+      return false;
     }
-  }
+  };
 
-  // Delete a category
   const handleDeleteCategory = async () => {
     if (selectedCategory) {
       try {
-        // First check if this category has any subcategories
-        const hasSubcats = await checkForSubcategories(selectedCategory.id)
-
+        const hasSubcats = await checkForSubcategories(selectedCategory.id);
         if (hasSubcats) {
-          toast.error(`Cannot delete ${selectedCategory.name}. Please delete all subcategories first.`)
-          setIsDeleteDialogOpen(false)
-          return
+          toast.error(`Cannot delete ${selectedCategory.name}. Please delete all subcategories first.`);
+          setIsDeleteDialogOpen(false);
+          return;
         }
 
-        const categoryRef = doc(db, "categories", selectedCategory.id)
-        await deleteDoc(categoryRef)
-        setCategories(categories.filter((cat) => cat.id !== selectedCategory.id))
-        toast.error(`${selectedCategory.name} has been deleted.`) // Using error for deletion feedback
-        setIsDeleteDialogOpen(false)
+        const categoryRef = doc(db, "categories", selectedCategory.id);
+        await deleteDoc(categoryRef);
+        setCategories(categories.filter((cat) => cat.id !== selectedCategory.id));
+        toast.error(`${selectedCategory.name} has been deleted.`);
+        setIsDeleteDialogOpen(false);
       } catch (error) {
-        console.error("Error deleting category:", error)
-        toast.error("Failed to delete category.")
+        console.error("Error deleting category:", error);
+        toast.error("Failed to delete category.");
       }
     }
-  }
+  };
 
   const handleEditCategory = (id: string) => {
-    const category = categories.find((c) => c.id === id)
+    const category = categories.find((c) => c.id === id);
     if (category) {
-      setSelectedCategory(category)
-      setIsEditModalOpen(true)
+      setSelectedCategory(category);
+      setIsEditModalOpen(true);
     }
-  }
+  };
 
   const handleDeleteClick = async (id: string) => {
-    const category = categories.find((c) => c.id === id)
+    const category = categories.find((c) => c.id === id);
     if (category) {
-      setSelectedCategory(category)
-
-      // Check if category has subcategories before showing delete dialog
-      const hasSubcats = await checkForSubcategories(id)
-      setHasSubcategories(hasSubcats)
-
-      setIsDeleteDialogOpen(true)
+      setSelectedCategory(category);
+      const hasSubcats = await checkForSubcategories(id);
+      setHasSubcategories(hasSubcats);
+      setIsDeleteDialogOpen(true);
     }
-  }
+  };
 
   return (
     <div>
@@ -213,6 +207,5 @@ export default function CategoryPage() {
         hasSubcategories={hasSubcategories}
       />
     </div>
-  )
+  );
 }
-

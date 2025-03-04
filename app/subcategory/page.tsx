@@ -1,166 +1,154 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Button } from "@/components/ui/button"
-import { PlusCircle, Pencil, Trash2 } from "lucide-react"
-import { toast } from "sonner"
-import { collection, addDoc, updateDoc, deleteDoc, doc, query, orderBy, onSnapshot } from "firebase/firestore"
-import { EditSubcategoryModal } from "@/src/components/EditSubCategoryModal"
-import { DeleteSubcategoryDialog } from "@/src/components/DeleteSubCategorDailog"
-import { AddSubcategoryModal } from "@/src/components/AddSubcategoryModal"
-import { db } from "@/lib/firebase"
+import { useState, useEffect } from "react";
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { PlusCircle, Pencil, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { collection, addDoc, updateDoc, deleteDoc, doc, query, orderBy, onSnapshot } from "firebase/firestore";
+import { EditSubcategoryModal } from "@/src/components/EditSubCategoryModal";
+import { DeleteSubcategoryDialog } from "@/src/components/DeleteSubCategorDailog";
+import { AddSubcategoryModal } from "@/src/components/AddSubcategoryModal";
+import { db } from "@/lib/firebase";
+import { useFirebaseAnalytics } from "@/lib/firebase-analytics";
 
 interface Category {
-  id: string
-  name: string
+  id: string;
+  name: string;
 }
 
 interface Subcategory {
-  id: string
-  name: string
-  description: string
-  categoryId: string
-  categoryName?: string
+  id: string;
+  name: string;
+  description: string;
+  categoryId: string;
+  categoryName?: string;
 }
 
 export default function SubcategoryPage() {
-  const [subcategories, setSubcategories] = useState<Subcategory[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false)
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
-  const [selectedSubcategory, setSelectedSubcategory] = useState<Subcategory | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [selectedSubcategory, setSelectedSubcategory] = useState<Subcategory | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Fetch categories for dropdown
+  // Initialize Firebase Analytics
+  useFirebaseAnalytics();
+
   useEffect(() => {
-    const q = query(collection(db, "categories"), orderBy("name"))
-
+    const q = query(collection(db, "categories"), orderBy("name"));
     const unsubscribe = onSnapshot(
       q,
       (querySnapshot) => {
         const categoriesList = querySnapshot.docs.map((doc) => ({
           id: doc.id,
           name: doc.data().name,
-        }))
-        setCategories(categoriesList)
+        }));
+        setCategories(categoriesList);
       },
       (error) => {
-        console.error("Error fetching categories:", error)
-        toast.error("Failed to load categories.")
-      },
-    )
+        console.error("Error fetching categories:", error);
+        toast.error("Failed to load categories.");
+      }
+    );
+    return () => unsubscribe();
+  }, []);
 
-    return () => unsubscribe()
-  }, [])
-
-  // Fetch subcategories with category names
   useEffect(() => {
-    const q = query(collection(db, "subcategories"), orderBy("name"))
-
+    const q = query(collection(db, "subcategories"), orderBy("name"));
     const unsubscribe = onSnapshot(
       q,
       (querySnapshot) => {
         const subcategoriesList = querySnapshot.docs.map((doc) => {
-          const data = doc.data()
+          const data = doc.data();
           return {
             id: doc.id,
             name: data.name,
             description: data.description || "",
             categoryId: data.categoryId,
-          }
-        })
+          };
+        });
 
-        // Add category names to subcategories
         const subcategoriesWithCategoryNames = subcategoriesList.map((subcategory) => {
-          const category = categories.find((cat) => cat.id === subcategory.categoryId)
+          const category = categories.find((cat) => cat.id === subcategory.categoryId);
           return {
             ...subcategory,
             categoryName: category?.name || "Unknown Category",
-          }
-        })
+          };
+        });
 
-        setSubcategories(subcategoriesWithCategoryNames)
-        setIsLoading(false)
+        setSubcategories(subcategoriesWithCategoryNames);
+        setIsLoading(false);
       },
       (error) => {
-        console.error("Error fetching subcategories:", error)
-        toast.error("Failed to load subcategories.")
-        setIsLoading(false)
-      },
-    )
+        console.error("Error fetching subcategories:", error);
+        toast.error("Failed to load subcategories.");
+        setIsLoading(false);
+      }
+    );
+    return () => unsubscribe();
+  }, [categories]);
 
-    return () => unsubscribe()
-  }, [categories])
-
-  // Add a new subcategory
   const handleAddSubcategory = async (name: string, description: string, categoryId: string) => {
     try {
-      const docRef = await addDoc(collection(db, "subcategories"), {
+      await addDoc(collection(db, "subcategories"), {
         name,
         description: description || "",
         categoryId,
-      })
-
-      const category = categories.find((cat) => cat.id === categoryId)
-
-      toast.success(`${name} has been added successfully.`)
+      });
+      toast.success(`${name} has been added successfully.`);
     } catch (error) {
-      console.error("Error adding subcategory:", error)
-      toast.error("Failed to add subcategory.")
+      console.error("Error adding subcategory:", error);
+      toast.error("Failed to add subcategory.");
     }
-  }
+  };
 
-  // Update an existing subcategory
   const handleUpdateSubcategory = async (id: string, name: string, description: string, categoryId: string) => {
     try {
-      const subcategoryRef = doc(db, "subcategories", id)
+      const subcategoryRef = doc(db, "subcategories", id);
       await updateDoc(subcategoryRef, {
         name,
         description: description || "",
         categoryId,
-      })
-
-      toast.success(`${name} has been updated successfully.`)
+      });
+      toast.success(`${name} has been updated successfully.`);
     } catch (error) {
-      console.error("Error updating subcategory:", error)
-      toast.error("Failed to update subcategory.")
+      console.error("Error updating subcategory:", error);
+      toast.error("Failed to update subcategory.");
     }
-  }
+  };
 
-  // Delete a subcategory
   const handleDeleteSubcategory = async () => {
     if (selectedSubcategory) {
       try {
-        const subcategoryRef = doc(db, "subcategories", selectedSubcategory.id)
-        await deleteDoc(subcategoryRef)
-        toast.error(`${selectedSubcategory.name} has been deleted.`)
+        const subcategoryRef = doc(db, "subcategories", selectedSubcategory.id);
+        await deleteDoc(subcategoryRef);
+        toast.error(`${selectedSubcategory.name} has been deleted.`);
+        setIsDeleteDialogOpen(false);
       } catch (error) {
-        console.error("Error deleting subcategory:", error)
-        toast.error("Failed to delete subcategory.")
+        console.error("Error deleting subcategory:", error);
+        toast.error("Failed to delete subcategory.");
       }
-      setIsDeleteDialogOpen(false)
     }
-  }
+  };
 
-  // Handle edit button click
   const handleEditSubcategory = (id: string) => {
-    const subcategory = subcategories.find((s) => s.id === id)
+    const subcategory = subcategories.find((s) => s.id === id);
     if (subcategory) {
-      setSelectedSubcategory(subcategory)
-      setIsEditModalOpen(true)
+      setSelectedSubcategory(subcategory);
+      setIsEditModalOpen(true);
     }
-  }
+  };
 
-  // Handle delete button click
   const handleDeleteClick = (id: string) => {
-    const subcategory = subcategories.find((s) => s.id === id)
+    const subcategory = subcategories.find((s) => s.id === id);
     if (subcategory) {
-      setSelectedSubcategory(subcategory)
-      setIsDeleteDialogOpen(true)
+      setSelectedSubcategory(subcategory);
+      setIsDeleteDialogOpen(true);
     }
-  }
+  };
 
   return (
     <div>
@@ -228,14 +216,12 @@ export default function SubcategoryPage() {
         </Table>
       </div>
 
-      {/* Modals */}
       <AddSubcategoryModal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
         onAddSubcategory={handleAddSubcategory}
         categories={categories}
       />
-
       <EditSubcategoryModal
         isOpen={isEditModalOpen}
         onClose={() => setIsEditModalOpen(false)}
@@ -243,7 +229,6 @@ export default function SubcategoryPage() {
         subcategory={selectedSubcategory}
         categories={categories}
       />
-
       <DeleteSubcategoryDialog
         isOpen={isDeleteDialogOpen}
         onClose={() => setIsDeleteDialogOpen(false)}
@@ -251,6 +236,5 @@ export default function SubcategoryPage() {
         subcategoryName={selectedSubcategory?.name || ""}
       />
     </div>
-  )
+  );
 }
-

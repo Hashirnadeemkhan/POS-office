@@ -1,140 +1,131 @@
-"use client"
-import { useState, useEffect, useCallback } from "react"
-import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { PlusCircle, Pencil, Trash2, Search } from "lucide-react"
-import { toast } from "sonner"
-import {
-  collection,
-  query,
-  orderBy,
-  limit,
-  getDocs,
-  deleteDoc,
-  doc,
-  addDoc,
-  updateDoc,
-  where,
-} from "firebase/firestore"
-import { db } from "@/lib/firebase"
-import { ProductFilter } from "@/src/components/ProductFilter"
-import { DeleteProductDialog } from "@/src/components/DeleteProductDialog"
-import { AddProductModal } from "@/src/components/AddProductModal"
-import { EditProductModal } from "@/src/components/EditProductModal"
-import { Pagination } from "@/components/ui/pagination"
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { PlusCircle, Pencil, Trash2, Search } from "lucide-react";
+import { toast } from "sonner";
+import { collection, query, orderBy, limit, getDocs, deleteDoc, doc, addDoc, updateDoc, where } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { ProductFilter } from "@/src/components/ProductFilter";
+import { DeleteProductDialog } from "@/src/components/DeleteProductDialog";
+import { AddProductModal } from "@/src/components/AddProductModal";
+import { EditProductModal } from "@/src/components/EditProductModal";
+import { Pagination } from "@/components/ui/pagination";
+import { useFirebaseAnalytics } from "@/lib/firebase-analytics";
 
 interface Product {
-  id: string
-  name: string
-  sku: string
-  price: number
-  stock: number
-  category: string
-  subcategory: string
+  id: string;
+  name: string;
+  sku: string;
+  price: number;
+  stock: number;
+  category: string;
+  subcategory: string;
 }
 
 export default function ProductPage() {
-  const [products, setProducts] = useState<Product[]>([])
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false)
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState("")
-  const [currentPage, setCurrentPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [filterCategory, setFilterCategory] = useState<string>("all")
-  const [filterSubcategory, setFilterSubcategory] = useState<string>("all")
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [filterSubcategory, setFilterSubcategory] = useState<string>("all");
 
-  const ITEMS_PER_PAGE = 10
+  // Initialize Firebase Analytics
+  useFirebaseAnalytics();
+
+  const ITEMS_PER_PAGE = 10;
 
   const fetchProducts = useCallback(async () => {
-    setIsLoading(true)
+    setIsLoading(true);
     try {
-      let q = query(collection(db, "products"), orderBy("name"), limit(currentPage * ITEMS_PER_PAGE))
-
+      let q = query(collection(db, "products"), orderBy("name"), limit(currentPage * ITEMS_PER_PAGE));
       if (filterCategory && filterCategory !== "all") {
-        q = query(q, where("category", "==", filterCategory))
+        q = query(q, where("category", "==", filterCategory));
       }
-
       if (filterSubcategory && filterSubcategory !== "all") {
-        q = query(q, where("subcategory", "==", filterSubcategory))
+        q = query(q, where("subcategory", "==", filterSubcategory));
       }
 
-      const querySnapshot = await getDocs(q)
+      const querySnapshot = await getDocs(q);
       const productsList = querySnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
-      })) as Product[]
+      })) as Product[];
 
-      setProducts(productsList)
+      setProducts(productsList);
 
-      // Get total count for pagination
-      const totalCountSnapshot = await getDocs(collection(db, "products"))
-      setTotalPages(Math.ceil(totalCountSnapshot.size / ITEMS_PER_PAGE))
+      const totalCountSnapshot = await getDocs(collection(db, "products"));
+      setTotalPages(Math.ceil(totalCountSnapshot.size / ITEMS_PER_PAGE));
 
-      setIsLoading(false)
+      setIsLoading(false);
     } catch (error) {
-      console.error("Error fetching products:", error)
-      toast.error("Failed to load products.")
-      setIsLoading(false)
+      console.error("Error fetching products:", error);
+      toast.error("Failed to load products.");
+      setIsLoading(false);
     }
-  }, [currentPage, filterCategory, filterSubcategory])
+  }, [currentPage, filterCategory, filterSubcategory]);
 
   useEffect(() => {
-    fetchProducts()
-  }, [fetchProducts])
+    fetchProducts();
+  }, [fetchProducts]);
 
   const handleAddProduct = async (product: Omit<Product, "id">) => {
     try {
-      const docRef = await addDoc(collection(db, "products"), product)
-      setProducts([...products, { id: docRef.id, ...product }])
-      toast.success(`${product.name} has been added successfully.`)
-      setIsAddModalOpen(false)
+      const docRef = await addDoc(collection(db, "products"), product);
+      setProducts([...products, { id: docRef.id, ...product }]);
+      toast.success(`${product.name} has been added successfully.`);
+      setIsAddModalOpen(false);
     } catch (error) {
-      console.error("Error adding product:", error)
-      toast.error("Failed to add product.")
+      console.error("Error adding product:", error);
+      toast.error("Failed to add product.");
     }
-  }
+  };
 
   const handleUpdateProduct = async (id: string, updatedProduct: Omit<Product, "id">) => {
     try {
-      const productRef = doc(db, "products", id)
-      await updateDoc(productRef, updatedProduct)
-      setProducts(products.map((product) => (product.id === id ? { id, ...updatedProduct } : product)))
-      toast.success(`${updatedProduct.name} has been updated successfully.`)
-      setIsEditModalOpen(false)
+      const productRef = doc(db, "products", id);
+      await updateDoc(productRef, updatedProduct);
+      setProducts(products.map((product) => (product.id === id ? { id, ...updatedProduct } : product)));
+      toast.success(`${updatedProduct.name} has been updated successfully.`);
+      setIsEditModalOpen(false);
     } catch (error) {
-      console.error("Error updating product:", error)
-      toast.error("Failed to update product.")
+      console.error("Error updating product:", error);
+      toast.error("Failed to update product.");
     }
-  }
+  };
 
   const handleDeleteProduct = async () => {
     if (selectedProduct) {
       try {
-        const productRef = doc(db, "products", selectedProduct.id)
-        await deleteDoc(productRef)
-        setProducts(products.filter((product) => product.id !== selectedProduct.id))
-        toast.success(`${selectedProduct.name} has been deleted.`)
-        setIsDeleteDialogOpen(false)
+        const productRef = doc(db, "products", selectedProduct.id);
+        await deleteDoc(productRef);
+        setProducts(products.filter((product) => product.id !== selectedProduct.id));
+        toast.success(`${selectedProduct.name} has been deleted.`);
+        setIsDeleteDialogOpen(false);
       } catch (error) {
-        console.error("Error deleting product:", error)
-        toast.error("Failed to delete product.")
+        console.error("Error deleting product:", error);
+        toast.error("Failed to delete product.");
       }
     }
-  }
+  };
 
   const handleSearch = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(event.target.value)
-  }
+    setSearchTerm(event.target.value);
+  };
 
   const filteredProducts = products.filter(
     (product) =>
       product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.sku.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+      product.sku.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <div className="container mx-auto py-10">
@@ -201,8 +192,8 @@ export default function ProductPage() {
                       size="sm"
                       className="mr-2"
                       onClick={() => {
-                        setSelectedProduct(product)
-                        setIsEditModalOpen(true)
+                        setSelectedProduct(product);
+                        setIsEditModalOpen(true);
                       }}
                     >
                       <Pencil className="h-4 w-4" />
@@ -212,8 +203,8 @@ export default function ProductPage() {
                       size="sm"
                       className="text-destructive hover:text-destructive/90"
                       onClick={() => {
-                        setSelectedProduct(product)
-                        setIsDeleteDialogOpen(true)
+                        setSelectedProduct(product);
+                        setIsDeleteDialogOpen(true);
                       }}
                     >
                       <Trash2 className="h-4 w-4" />
@@ -246,6 +237,5 @@ export default function ProductPage() {
         productName={selectedProduct?.name || ""}
       />
     </div>
-  )
+  );
 }
-
