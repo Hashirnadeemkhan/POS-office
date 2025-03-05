@@ -1,23 +1,16 @@
-// @/lib/firebase.js
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 
-// Your Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyDtZ_EHQhGSTnJZ2mGAEDC5gK6UjAEFWr8",
-  authDomain: "pos-office-96be6.firebaseapp.com",
-  projectId: "pos-office-96be6",
-  storageBucket: "pos-office-96be6.firebasestorage.app",
-  messagingSenderId: "696435013554",
-  appId: "1:696435013554:web:ca194a39d2bbec424096ab",
-  measurementId: "G-KKB494W3VT",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-// Initialize Firebase app (safe for both server and client)
 const app = initializeApp(firebaseConfig);
-
-// Initialize Firestore (safe for both server and client)
 export const db = getFirestore(app);
-
-// Export app for use elsewhere if needed
 export { app };
