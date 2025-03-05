@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
-import { collection, getDocs } from "firebase/firestore"
+import { collection, getDocs, query } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 
 interface ProductFilterProps {
@@ -14,30 +14,46 @@ interface ProductFilterProps {
 export function ProductFilter({ onCategoryChange, onSubcategoryChange }: ProductFilterProps) {
   const [categories, setCategories] = useState<string[]>([])
   const [subcategories, setSubcategories] = useState<string[]>([])
+  const [selectedCategory, setSelectedCategory] = useState<string>("all")
 
   useEffect(() => {
     const fetchCategories = async () => {
-      const querySnapshot = await getDocs(collection(db, "categories"))
-      const categoryList = querySnapshot.docs.map((doc) => doc.data().name)
-      setCategories(categoryList)
-    }
+      try {
+        const q = query(collection(db, "products"))
+        const querySnapshot = await getDocs(q)
 
-    const fetchSubcategories = async () => {
-      const querySnapshot = await getDocs(collection(db, "subcategories"))
-      const subcategoryList = querySnapshot.docs.map((doc) => doc.data().name)
-      setSubcategories(subcategoryList)
+        const uniqueCategories = new Set<string>()
+        const uniqueSubcategories = new Set<string>()
+
+        querySnapshot.forEach((doc) => {
+          const data = doc.data()
+          if (data.category) uniqueCategories.add(data.category)
+          if (data.subcategory) uniqueSubcategories.add(data.subcategory)
+        })
+
+        setCategories(Array.from(uniqueCategories))
+        setSubcategories(Array.from(uniqueSubcategories))
+      } catch (error) {
+        console.error("Error fetching categories:", error)
+      }
     }
 
     fetchCategories()
-    fetchSubcategories()
   }, [])
 
+  const handleCategoryChange = (value: string) => {
+    setSelectedCategory(value)
+    onCategoryChange(value)
+  }
+
   return (
-    <div className="flex space-x-4">
-      <div>
-        <Label htmlFor="category-filter">Category</Label>
-        <Select onValueChange={onCategoryChange}>
-          <SelectTrigger id="category-filter">
+    <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2">
+        <Label htmlFor="category-filter" className="text-sm whitespace-nowrap">
+          Category:
+        </Label>
+        <Select value={selectedCategory} onValueChange={handleCategoryChange}>
+          <SelectTrigger id="category-filter" className="w-[180px]">
             <SelectValue placeholder="All Categories" />
           </SelectTrigger>
           <SelectContent>
@@ -50,10 +66,13 @@ export function ProductFilter({ onCategoryChange, onSubcategoryChange }: Product
           </SelectContent>
         </Select>
       </div>
-      <div>
-        <Label htmlFor="subcategory-filter">Subcategory</Label>
-        <Select onValueChange={onSubcategoryChange}>
-          <SelectTrigger id="subcategory-filter">
+
+      <div className="flex items-center gap-2">
+        <Label htmlFor="subcategory-filter" className="text-sm whitespace-nowrap">
+          Subcategory:
+        </Label>
+        <Select value="all" onValueChange={onSubcategoryChange}>
+          <SelectTrigger id="subcategory-filter" className="w-[180px]">
             <SelectValue placeholder="All Subcategories" />
           </SelectTrigger>
           <SelectContent>

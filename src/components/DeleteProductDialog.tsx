@@ -23,18 +23,14 @@ export function DeleteProductDialog({ isOpen, onClose, onConfirm, productName }:
     <AlertDialog open={isOpen} onOpenChange={onClose}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle className="text-foreground">Are you sure?</AlertDialogTitle>
+          <AlertDialogTitle>Are you sure?</AlertDialogTitle>
           <AlertDialogDescription>
-            This will permanently delete the product <strong className="text-foreground">{productName}</strong>. This
-            action cannot be undone.
+            This will permanently delete the product `&quot;`{productName}`&quot;` and all its variants. This action cannot be undone.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={onConfirm}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-          >
+          <AlertDialogAction onClick={onConfirm} className="bg-destructive text-destructive-foreground">
             Delete
           </AlertDialogAction>
         </AlertDialogFooter>
