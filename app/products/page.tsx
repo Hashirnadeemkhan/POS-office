@@ -8,10 +8,11 @@ import { PlusCircle, Pencil, Trash2, ChevronDown, ChevronUp } from "lucide-react
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { collection, query, getDocs, deleteDoc, doc, where, orderBy } from "firebase/firestore"
+import { collection, query, getDocs, deleteDoc, doc, where, orderBy, Query } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { toast } from "sonner"
 import { DeleteProductDialog } from "@/src/components/DeleteProductDialog"
+import { array } from "zod"
 
 // Define interfaces for our data
 interface VariantAttribute {
@@ -72,7 +73,7 @@ export default function ProductsPage() {
         const q = query(collection(db, "products"))
         const querySnapshot = await getDocs(q)
 
-        const uniqueCategories = new Set<string>()
+        const uniqueCategories = new Set<string>()  //set is the built-in object hai jo unique values store karta hai. Duplicate values allow nahi karta.
         const uniqueSubcategories = new Set<string>()
 
         querySnapshot.forEach((doc) => {
@@ -90,6 +91,8 @@ export default function ProductsPage() {
 
     fetchCategories()
   }, [])
+
+  
 
   // Fetch products
   useEffect(() => {
