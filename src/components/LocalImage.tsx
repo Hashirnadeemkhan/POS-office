@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useEffect } from 'react'
-import Image from 'next/image'
-import { getImage,getImageIdFromUrl } from '@/lib/imageStorage'
-import { ImageIcon } from 'lucide-react'
+import { useState, useEffect, useRef } from "react"
+import Image from "next/image"
+import { getImage, getImageIdFromUrl } from "@/lib/imageStorage"
+import { ImageIcon } from "lucide-react"
 
 interface LocalImageProps {
   src: string
@@ -14,53 +14,67 @@ interface LocalImageProps {
   className?: string
 }
 
-export default function LocalImage({ src, alt, width, height, fill = false, className = '' }: LocalImageProps) {
+export default function LocalImage({ src, alt, width, height, fill = false, className = "" }: LocalImageProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(false)
+  // Use a ref to track the current blob URL that needs to be revoked on cleanup
+  const blobUrlRef = useRef<string | null>(null)
 
   useEffect(() => {
     async function loadImage() {
       setIsLoading(true)
       setError(false)
-      
+
       // If it's not a local image URL, use it directly
-      if (!src.startsWith('local-image://')) {
+      if (!src.startsWith("local-image://")) {
         setImageSrc(src)
         setIsLoading(false)
         return
       }
-      
+
       // Get the image ID from the URL
       const imageId = getImageIdFromUrl(src)
-      
+
       if (!imageId) {
         setError(true)
         setIsLoading(false)
         return
       }
-      
+
       // Get the image from IndexedDB
       try {
         const imageUrl = await getImage(imageId)
+
+        // Clean up previous blob URL if exists
+        if (blobUrlRef.current && blobUrlRef.current.startsWith("blob:")) {
+          URL.revokeObjectURL(blobUrlRef.current)
+        }
+
+        // Store the new blob URL in the ref
+        if (imageUrl && imageUrl.startsWith("blob:")) {
+          blobUrlRef.current = imageUrl
+        }
+
         setImageSrc(imageUrl)
       } catch (err) {
-        console.error('Error loading image:', err)
+        console.error("Error loading image:", err)
         setError(true)
       } finally {
         setIsLoading(false)
       }
     }
-    
+
     loadImage()
-    
-    // Clean up object URL when component unmounts
+
+    // Clean up object URL when component unmounts or src changes
     return () => {
-      if (imageSrc && imageSrc.startsWith('blob:')) {
-        URL.revokeObjectURL(imageSrc)
+      if (blobUrlRef.current && blobUrlRef.current.startsWith("blob:")) {
+        URL.revokeObjectURL(blobUrlRef.current)
+        blobUrlRef.current = null
       }
     }
-  }, [src])
+  }, [src]) // Only depend on src, not imageSrc
 
   if (isLoading) {
     return (
@@ -82,23 +96,18 @@ export default function LocalImage({ src, alt, width, height, fill = false, clas
 
   if (fill) {
     return (
-      <div className={`relative ${className}`} style={{ width: '100%', height: '100%' }}>
-        <Image 
-          src={imageSrc || "/placeholder.svg"} 
-          alt={alt} 
-          fill 
-          className={`object-cover ${className}`}
-        />
+      <div className={`relative ${className}`} style={{ width: "100%", height: "100%" }}>
+        <Image src={imageSrc || "/placeholder.svg"} alt={alt} fill className={`object-cover ${className}`} />
       </div>
     )
   }
 
   return (
-    <Image 
-      src={imageSrc || "/placeholder.svg"} 
-      alt={alt} 
-      width={width || 100} 
-      height={height || 100} 
+    <Image
+      src={imageSrc || "/placeholder.svg"}
+      alt={alt}
+      width={width || 100}
+      height={height || 100}
       className={className}
     />
   )
