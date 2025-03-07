@@ -2,9 +2,9 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { PlusCircle, Trash2, ArrowLeft } from "lucide-react"
+import { PlusCircle, Trash2, ArrowLeft, Upload, X, ImageIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -15,6 +15,8 @@ import { Switch } from "@/components/ui/switch"
 import { toast } from "sonner"
 import { collection, addDoc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
+import { saveImage, generateImageId } from "@/lib/imageStorage"
+import Image from "next/image"
 
 // Define the attribute interface
 interface VariantAttribute {
@@ -28,6 +30,8 @@ interface Variant {
   price: string
   stock: string
   attributes: VariantAttribute[]
+  imageFile: File | null
+  imagePreview: string
 }
 
 export default function AddProductPage() {
@@ -47,6 +51,8 @@ export default function AddProductPage() {
       price: "",
       stock: "",
       attributes: [{ key: "", value: "" }],
+      imageFile: null,
+      imagePreview: "",
     },
   ])
 
@@ -54,8 +60,94 @@ export default function AddProductPage() {
   const [category, setCategory] = useState("")
   const [subcategory, setSubcategory] = useState("")
 
+  // Product images
+  const [mainImageFile, setMainImageFile] = useState<File | null>(null)
+  const [mainImagePreview, setMainImagePreview] = useState("")
+  const [galleryFiles, setGalleryFiles] = useState<File[]>([])
+  const [galleryPreviews, setGalleryPreviews] = useState<string[]>([])
+
+  // Refs for file inputs
+  const mainImageInputRef = useRef<HTMLInputElement>(null)
+  const galleryInputRef = useRef<HTMLInputElement>(null)
+  const variantImageRefs = useRef<(HTMLInputElement | null)[]>([])
+
   // Loading state
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Create a ref callback for variant image inputs
+  const setVariantImageRef = useCallback(
+    (index: number) => (el: HTMLInputElement | null) => {
+      variantImageRefs.current[index] = el
+    },
+    [],
+  )
+
+  // Handle main image selection
+  const handleMainImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0]
+      setMainImageFile(file)
+      setMainImagePreview(URL.createObjectURL(file))
+    }
+  }
+
+  // Handle gallery images selection
+  const handleGalleryImagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const newFiles = Array.from(e.target.files)
+      const newPreviews = newFiles.map((file) => URL.createObjectURL(file))
+
+      setGalleryFiles((prev) => [...prev, ...newFiles])
+      setGalleryPreviews((prev) => [...prev, ...newPreviews])
+    }
+  }
+
+  // Handle variant image selection
+  const handleVariantImageChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0]
+      const newVariants = [...variants]
+      newVariants[index] = {
+        ...newVariants[index],
+        imageFile: file,
+        imagePreview: URL.createObjectURL(file),
+      }
+      setVariants(newVariants)
+    }
+  }
+
+  // Remove gallery image
+  const removeGalleryImage = (index: number) => {
+    const newFiles = [...galleryFiles]
+    const newPreviews = [...galleryPreviews]
+
+    // Revoke the object URL to avoid memory leaks
+    URL.revokeObjectURL(newPreviews[index])
+
+    newFiles.splice(index, 1)
+    newPreviews.splice(index, 1)
+
+    setGalleryFiles(newFiles)
+    setGalleryPreviews(newPreviews)
+  }
+
+  // Remove variant image
+  const removeVariantImage = (index: number) => {
+    const newVariants = [...variants]
+
+    // Revoke the object URL to avoid memory leaks
+    if (newVariants[index].imagePreview) {
+      URL.revokeObjectURL(newVariants[index].imagePreview)
+    }
+
+    newVariants[index] = {
+      ...newVariants[index],
+      imageFile: null,
+      imagePreview: "",
+    }
+
+    setVariants(newVariants)
+  }
 
   // Add a new variant
   const addVariant = () => {
@@ -66,6 +158,8 @@ export default function AddProductPage() {
         price: "",
         stock: "",
         attributes: [{ key: "", value: "" }],
+        imageFile: null,
+        imagePreview: "",
       },
     ])
   }
@@ -74,6 +168,12 @@ export default function AddProductPage() {
   const removeVariant = (index: number) => {
     if (variants.length > 1) {
       const newVariants = [...variants]
+
+      // Revoke the object URL to avoid memory leaks
+      if (newVariants[index].imagePreview) {
+        URL.revokeObjectURL(newVariants[index].imagePreview)
+      }
+
       newVariants.splice(index, 1)
       setVariants(newVariants)
     } else {
@@ -160,6 +260,23 @@ export default function AddProductPage() {
         }
       }
 
+      // Save main product image if exists
+      let mainImageUrl = ""
+      if (mainImageFile) {
+        const imageId = generateImageId("product_main")
+        mainImageUrl = await saveImage(imageId, mainImageFile)
+      }
+
+      // Save gallery images if exist
+      const galleryUrls: string[] = []
+      if (galleryFiles.length > 0) {
+        for (const file of galleryFiles) {
+          const imageId = generateImageId("product_gallery")
+          const url = await saveImage(imageId, file)
+          galleryUrls.push(url)
+        }
+      }
+
       // Create product in Firestore
       const productRef = await addDoc(collection(db, "products"), {
         name,
@@ -169,16 +286,26 @@ export default function AddProductPage() {
         status,
         category,
         subcategory,
+        main_image_url: mainImageUrl,
+        gallery_images: galleryUrls,
         created_at: new Date(),
       })
 
       // Add variants
       for (const variant of variants) {
+        // Save variant image if exists
+        let variantImageUrl = ""
+        if (variant.imageFile) {
+          const imageId = generateImageId("variant")
+          variantImageUrl = await saveImage(imageId, variant.imageFile)
+        }
+
         const variantRef = await addDoc(collection(db, "variants"), {
           product_id: productRef.id,
           name: variant.name,
           price: Number.parseFloat(variant.price),
           stock: Number.parseInt(variant.stock),
+          image_url: variantImageUrl,
         })
 
         // Add attributes for this variant
@@ -190,6 +317,13 @@ export default function AddProductPage() {
           })
         }
       }
+
+      // Clean up object URLs
+      if (mainImagePreview) URL.revokeObjectURL(mainImagePreview)
+      galleryPreviews.forEach((url) => URL.revokeObjectURL(url))
+      variants.forEach((variant) => {
+        if (variant.imagePreview) URL.revokeObjectURL(variant.imagePreview)
+      })
 
       toast.success("Product added successfully")
       router.push("/products")
@@ -346,6 +480,109 @@ export default function AddProductPage() {
           </CardContent>
         </Card>
 
+        {/* Product Images */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Product Images</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Main Product Image */}
+            <div className="space-y-2">
+              <Label>Main Product Image</Label>
+              <div className="flex items-start gap-4">
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 w-40 h-40 flex flex-col items-center justify-center relative">
+                  {mainImagePreview ? (
+                    <>
+                      <div className="relative w-full h-full">
+                        <Image
+                          src={mainImagePreview || "/placeholder.svg"}
+                          alt="Main product image"
+                          fill
+                          className="object-cover rounded-md"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute top-1 right-1 h-6 w-6 bg-white rounded-full"
+                        onClick={() => {
+                          if (mainImagePreview) URL.revokeObjectURL(mainImagePreview)
+                          setMainImageFile(null)
+                          setMainImagePreview("")
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <ImageIcon className="h-10 w-10 text-gray-400 mb-2" />
+                      <span className="text-xs text-gray-500 text-center">Click to upload main image</span>
+                      <input
+                        ref={mainImageInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        onChange={handleMainImageChange}
+                      />
+                    </>
+                  )}
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm text-gray-500">
+                    This will be the primary image shown in product listings and at the top of the product detail page.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Gallery Images */}
+            <div className="space-y-2">
+              <Label>Gallery Images</Label>
+              <div className="flex flex-wrap gap-4">
+                {galleryPreviews.map((preview, index) => (
+                  <div key={index} className="relative w-24 h-24 border rounded-md overflow-hidden">
+                    <Image
+                      src={preview || "/placeholder.svg"}
+                      alt={`Gallery image ${index + 1}`}
+                      fill
+                      className="object-cover"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute top-1 right-1 h-6 w-6 bg-white rounded-full"
+                      onClick={() => removeGalleryImage(index)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+                <div
+                  className="w-24 h-24 border-2 border-dashed border-gray-300 rounded-md flex flex-col items-center justify-center cursor-pointer"
+                  onClick={() => galleryInputRef.current?.click()}
+                >
+                  <Upload className="h-6 w-6 text-gray-400 mb-1" />
+                  <span className="text-xs text-gray-500">Add</span>
+                  <input
+                    ref={galleryInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={handleGalleryImagesChange}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-gray-500">
+                Add up to 5 additional images to show your product from different angles.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Variants */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
@@ -414,6 +651,51 @@ export default function AddProductPage() {
                       placeholder="0"
                       required
                     />
+                  </div>
+                </div>
+
+                {/* Variant Image */}
+                <div className="space-y-2">
+                  <Label>Variant Image</Label>
+                  <div className="flex items-start gap-4">
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-2 w-24 h-24 flex flex-col items-center justify-center relative">
+                      {variant.imagePreview ? (
+                        <>
+                          <div className="relative w-full h-full">
+                            <Image
+                              src={variant.imagePreview || "/placeholder.svg"}
+                              alt={`Variant ${variantIndex + 1} image`}
+                              fill
+                              className="object-cover rounded-md"
+                            />
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="absolute top-1 right-1 h-5 w-5 bg-white rounded-full"
+                            onClick={() => removeVariantImage(variantIndex)}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <ImageIcon className="h-8 w-8 text-gray-400 mb-1" />
+                          <span className="text-xs text-gray-500 text-center">Upload</span>
+                          <input
+                            ref={setVariantImageRef(variantIndex)}
+                            type="file"
+                            accept="image/*"
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            onChange={(e) => handleVariantImageChange(variantIndex, e)}
+                          />
+                        </>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-xs text-gray-500">Add a specific image for this variant (optional).</p>
+                    </div>
                   </div>
                 </div>
 

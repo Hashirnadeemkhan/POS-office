@@ -4,15 +4,16 @@ import React from "react"
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { PlusCircle, Pencil, Trash2, ChevronDown, ChevronUp } from "lucide-react"
+import { PlusCircle, Pencil, Trash2, ChevronDown, ChevronUp, ImageIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { collection, query, getDocs, deleteDoc, doc, where, orderBy, Query } from "firebase/firestore"
+import { collection, query, getDocs, deleteDoc, doc, where, orderBy } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { toast } from "sonner"
 import { DeleteProductDialog } from "@/src/components/DeleteProductDialog"
-import { array } from "zod"
+import LocalImage from "@/src/components/LocalImage"
+import { deleteImage,getImageIdFromUrl } from "@/lib/imageStorage"
 
 // Define interfaces for our data
 interface VariantAttribute {
@@ -27,6 +28,7 @@ interface Variant {
   price: number
   stock: number
   attributes: VariantAttribute[]
+  image_url?: string
 }
 
 interface Product {
@@ -39,6 +41,8 @@ interface Product {
   category?: string
   subcategory?: string
   variants: Variant[]
+  main_image_url?: string
+  gallery_images?: string[]
 }
 
 export default function ProductsPage() {
@@ -73,7 +77,7 @@ export default function ProductsPage() {
         const q = query(collection(db, "products"))
         const querySnapshot = await getDocs(q)
 
-        const uniqueCategories = new Set<string>()  //set is the built-in object hai jo unique values store karta hai. Duplicate values allow nahi karta.
+        const uniqueCategories = new Set<string>() //set is the built-in object hai jo unique values store karta hai. Duplicate values allow nahi karta.
         const uniqueSubcategories = new Set<string>()
 
         querySnapshot.forEach((doc) => {
@@ -91,8 +95,6 @@ export default function ProductsPage() {
 
     fetchCategories()
   }, [])
-
-  
 
   // Fetch products
   useEffect(() => {
@@ -140,6 +142,7 @@ export default function ProductsPage() {
               price: variantData.price || 0,
               stock: variantData.stock || 0,
               attributes,
+              image_url: variantData.image_url || "",
             })
           }
 
@@ -153,6 +156,8 @@ export default function ProductsPage() {
             category: productData.category,
             subcategory: productData.subcategory,
             variants,
+            main_image_url: productData.main_image_url || "",
+            gallery_images: productData.gallery_images || [],
           })
         }
 
@@ -177,8 +182,16 @@ export default function ProductsPage() {
   const handleDeleteProduct = async () => {
     if (selectedProduct) {
       try {
-        // Delete all variant attributes
+        // Delete all variant attributes and images
         for (const variant of selectedProduct.variants) {
+          // Delete variant image if exists
+          if (variant.image_url && variant.image_url.startsWith("local-image://")) {
+            const imageId = getImageIdFromUrl(variant.image_url)
+            if (imageId) {
+              await deleteImage(imageId)
+            }
+          }
+
           const attributesQuery = query(collection(db, "variant_attributes"), where("variant_id", "==", variant.id))
           const attributesSnapshot = await getDocs(attributesQuery)
 
@@ -188,6 +201,25 @@ export default function ProductsPage() {
 
           // Delete the variant
           await deleteDoc(doc(db, "variants", variant.id))
+        }
+
+        // Delete product images
+        if (selectedProduct.main_image_url && selectedProduct.main_image_url.startsWith("local-image://")) {
+          const mainImageId = getImageIdFromUrl(selectedProduct.main_image_url)
+          if (mainImageId) {
+            await deleteImage(mainImageId)
+          }
+        }
+
+        if (selectedProduct.gallery_images && selectedProduct.gallery_images.length > 0) {
+          for (const imageUrl of selectedProduct.gallery_images) {
+            if (imageUrl.startsWith("local-image://")) {
+              const galleryImageId = getImageIdFromUrl(imageUrl)
+              if (galleryImageId) {
+                await deleteImage(galleryImageId)
+              }
+            }
+          }
         }
 
         // Delete the product
@@ -271,6 +303,7 @@ export default function ProductsPage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="w-10 text-center py-3"></th>
+                  <th className="text-center py-3 w-16">Image</th>
                   <th className="text-center py-3">Name</th>
                   <th className="text-center py-3">SKU</th>
                   <th className="text-center py-3">Base Price</th>
@@ -283,13 +316,13 @@ export default function ProductsPage() {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-4">
+                    <td colSpan={9} className="text-center py-4">
                       Loading products...
                     </td>
                   </tr>
                 ) : filteredProducts.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-4">
+                    <td colSpan={9} className="text-center py-4">
                       No products found.
                     </td>
                   </tr>
@@ -310,6 +343,22 @@ export default function ProductsPage() {
                               <ChevronDown className="h-4 w-4" />
                             )}
                           </Button>
+                        </td>
+                        <td className="text-center py-3">
+                          {product.main_image_url ? (
+                            <div className="relative w-12 h-12 mx-auto rounded-md overflow-hidden">
+                              <LocalImage
+                                src={product.main_image_url}
+                                alt={product.name}
+                                fill
+                                className="object-cover"
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-12 h-12 mx-auto bg-gray-100 flex items-center justify-center rounded-md">
+                              <ImageIcon className="h-6 w-6 text-gray-400" />
+                            </div>
+                          )}
                         </td>
                         <td className="text-center py-3">{product.name}</td>
                         <td className="text-center py-3">{product.sku}</td>
@@ -352,34 +401,74 @@ export default function ProductsPage() {
                       </tr>
                       {expandedProducts[product.id] && (
                         <tr>
-                          <td colSpan={8} className="p-0">
+                          <td colSpan={9} className="p-0">
                             <div className="bg-gray-50 p-4">
+                              {/* Product Gallery */}
+                              {product.gallery_images && product.gallery_images.length > 0 && (
+                                <div className="mb-4">
+                                  <h4 className="text-sm font-medium mb-2">Product Gallery</h4>
+                                  <div className="flex gap-2 overflow-x-auto pb-2">
+                                    {product.gallery_images.map((imageUrl, index) => (
+                                      <div
+                                        key={index}
+                                        className="relative w-20 h-20 flex-shrink-0 rounded-md overflow-hidden"
+                                      >
+                                        <LocalImage
+                                          src={imageUrl}
+                                          alt={`${product.name} gallery ${index + 1}`}
+                                          fill
+                                          className="object-cover"
+                                        />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
                               <h4 className="text-sm font-medium mb-2">Variants</h4>
                               <div className="space-y-2">
                                 {product.variants.map((variant) => (
                                   <div key={variant.id} className="bg-white p-3 rounded border">
-                                    <div className="flex justify-between items-center">
-                                      <h5 className="font-medium">{variant.name}</h5>
-                                      <div className="flex space-x-4 text-sm">
-                                        <span>Price: ${variant.price.toFixed(2)}</span>
-                                        <span>Stock: {variant.stock}</span>
+                                    <div className="flex items-center gap-4">
+                                      {variant.image_url ? (
+                                        <div className="relative w-16 h-16 rounded-md overflow-hidden flex-shrink-0">
+                                          <LocalImage
+                                            src={variant.image_url}
+                                            alt={variant.name}
+                                            fill
+                                            className="object-cover"
+                                          />
+                                        </div>
+                                      ) : (
+                                        <div className="w-16 h-16 bg-gray-100 flex items-center justify-center rounded-md flex-shrink-0">
+                                          <ImageIcon className="h-6 w-6 text-gray-400" />
+                                        </div>
+                                      )}
+                                      <div className="flex-1">
+                                        <div className="flex justify-between items-center">
+                                          <h5 className="font-medium">{variant.name}</h5>
+                                          <div className="flex space-x-4 text-sm">
+                                            <span>Price: ${variant.price.toFixed(2)}</span>
+                                            <span>Stock: {variant.stock}</span>
+                                          </div>
+                                        </div>
+                                        {variant.attributes.length > 0 && (
+                                          <div className="mt-2">
+                                            <h6 className="text-xs text-gray-500 mb-1">Attributes:</h6>
+                                            <div className="flex flex-wrap gap-2">
+                                              {variant.attributes.map((attr) => (
+                                                <span
+                                                  key={attr.id}
+                                                  className="inline-flex items-center px-2 py-1 rounded-md text-xs bg-gray-100"
+                                                >
+                                                  {attr.key_name}: {attr.value_name}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
-                                    {variant.attributes.length > 0 && (
-                                      <div className="mt-2">
-                                        <h6 className="text-xs text-gray-500 mb-1">Attributes:</h6>
-                                        <div className="flex flex-wrap gap-2">
-                                          {variant.attributes.map((attr) => (
-                                            <span
-                                              key={attr.id}
-                                              className="inline-flex items-center px-2 py-1 rounded-md text-xs bg-gray-100"
-                                            >
-                                              {attr.key_name}: {attr.value_name}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
                                   </div>
                                 ))}
                               </div>
