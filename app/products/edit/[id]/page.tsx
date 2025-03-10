@@ -17,7 +17,6 @@ import { collection, doc, getDoc, getDocs, updateDoc, query, where, addDoc, dele
 import { db } from "@/lib/firebase"
 import { saveImage, generateImageId, deleteImage, getImageIdFromUrl } from "@/lib/imageStorage"
 import Image from "next/image"
-import LocalImage from "@/src/components/LocalImage"
 
 // Define the attribute interface
 interface VariantAttribute {
@@ -135,7 +134,7 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
         })
 
         // Set main image preview if exists
-        if (productData.main_image_url && productData.main_image_url.startsWith("local-image://")) {
+        if (productData.main_image_url) {
           setMainImagePreview(productData.main_image_url)
         }
 
@@ -433,8 +432,8 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
       // Handle main image changes
       let mainImageUrl = product.main_image_url || ""
       if (isMainImageChanged && mainImageFile) {
-        // Delete old image if exists
-        if (product.main_image_url && product.main_image_url.startsWith("local-image://")) {
+        // Delete old image if exists and has an ID
+        if (product.main_image_url) {
           const imageId = getImageIdFromUrl(product.main_image_url)
           if (imageId) {
             await deleteImage(imageId)
@@ -446,7 +445,7 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
         mainImageUrl = await saveImage(imageId, mainImageFile)
       } else if (isMainImageChanged && !mainImageFile) {
         // Image was removed
-        if (product.main_image_url && product.main_image_url.startsWith("local-image://")) {
+        if (product.main_image_url) {
           const imageId = getImageIdFromUrl(product.main_image_url)
           if (imageId) {
             await deleteImage(imageId)
@@ -460,11 +459,9 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
 
       // Remove deleted gallery images
       for (const imageUrl of deletedGalleryImages) {
-        if (imageUrl.startsWith("local-image://")) {
-          const imageId = getImageIdFromUrl(imageUrl)
-          if (imageId) {
-            await deleteImage(imageId)
-          }
+        const imageId = getImageIdFromUrl(imageUrl)
+        if (imageId) {
+          await deleteImage(imageId)
         }
         galleryUrls = galleryUrls.filter((url) => url !== imageUrl)
       }
@@ -508,7 +505,7 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
         let variantImageUrl = variant.image_url || ""
         if (variant.isImageChanged) {
           // Delete old image if exists
-          if (variant.image_url && variant.image_url.startsWith("local-image://")) {
+          if (variant.image_url) {
             const imageId = getImageIdFromUrl(variant.image_url)
             if (imageId) {
               await deleteImage(imageId)
@@ -761,21 +758,12 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
                   {mainImagePreview ? (
                     <>
                       <div className="relative w-full h-full">
-                        {mainImagePreview.startsWith("blob:") ? (
-                          <Image
-                            src={mainImagePreview || "/placeholder.svg"}
-                            alt="Main product image"
-                            fill
-                            className="object-cover rounded-md"
-                          />
-                        ) : (
-                          <LocalImage
-                            src={mainImagePreview}
-                            alt="Main product image"
-                            fill
-                            className="object-cover rounded-md"
-                          />
-                        )}
+                        <Image
+                          src={mainImagePreview || "/placeholder.svg"}
+                          alt="Main product image"
+                          fill
+                          className="object-cover rounded-md"
+                        />
                       </div>
                       <Button
                         type="button"
@@ -823,7 +811,12 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
                 {/* Existing gallery images */}
                 {galleryPreviews.map((preview, index) => (
                   <div key={`existing-${index}`} className="relative w-24 h-24 border rounded-md overflow-hidden">
-                    <LocalImage src={preview} alt={`Gallery image ${index + 1}`} fill className="object-cover" />
+                    <Image
+                      src={preview || "/placeholder.svg"}
+                      alt={`Gallery image ${index + 1}`}
+                      fill
+                      className="object-cover"
+                    />
                     <Button
                       type="button"
                       variant="ghost"
@@ -958,21 +951,12 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
                       {variant.imagePreview ? (
                         <>
                           <div className="relative w-full h-full">
-                            {variant.isImageChanged ? (
-                              <Image
-                                src={variant.imagePreview || "/placeholder.svg"}
-                                alt={`Variant ${variantIndex + 1} image`}
-                                fill
-                                className="object-cover rounded-md"
-                              />
-                            ) : (
-                              <LocalImage
-                                src={variant.imagePreview}
-                                alt={`Variant ${variantIndex + 1} image`}
-                                fill
-                                className="object-cover rounded-md"
-                              />
-                            )}
+                            <Image
+                              src={variant.imagePreview || "/placeholder.svg"}
+                              alt={`Variant ${variantIndex + 1} image`}
+                              fill
+                              className="object-cover rounded-md"
+                            />
                           </div>
                           <Button
                             type="button"

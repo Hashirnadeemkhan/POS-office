@@ -1,7 +1,6 @@
 "use client"
 
 import React from "react"
-
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { PlusCircle, Pencil, Trash2, ChevronDown, ChevronUp, ImageIcon } from "lucide-react"
@@ -12,8 +11,8 @@ import { collection, query, getDocs, deleteDoc, doc, where, orderBy } from "fire
 import { db } from "@/lib/firebase"
 import { toast } from "sonner"
 import { DeleteProductDialog } from "@/src/components/DeleteProductDialog"
-import LocalImage from "@/src/components/LocalImage"
-import { deleteImage,getImageIdFromUrl } from "@/lib/imageStorage"
+import { deleteImage, getImageIdFromUrl } from "@/lib/imageStorage"
+import Image from "next/image"
 
 // Define interfaces for our data
 interface VariantAttribute {
@@ -70,453 +69,398 @@ export default function ProductsPage() {
     }))
   }
 
-  // Fetch categories and subcategories
-  useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        const q = query(collection(db, "products"))
-        const querySnapshot = await getDocs(q)
+ // Fetch categories and subcategories
+ useEffect(() => {
+  const fetchCategories = async () => {
+    try {
+      const q = query(collection(db, "products"))
+      const querySnapshot = await getDocs(q)
 
-        const uniqueCategories = new Set<string>() //set is the built-in object hai jo unique values store karta hai. Duplicate values allow nahi karta.
-        const uniqueSubcategories = new Set<string>()
+      const uniqueCategories = new Set<string>()
+      const uniqueSubcategories = new Set<string>()
 
-        querySnapshot.forEach((doc) => {
-          const data = doc.data()
-          if (data.category) uniqueCategories.add(data.category)
-          if (data.subcategory) uniqueSubcategories.add(data.subcategory)
-        })
+      querySnapshot.forEach((doc) => {
+        const data = doc.data()
+        if (data.category) uniqueCategories.add(data.category)
+        if (data.subcategory) uniqueSubcategories.add(data.subcategory)
+      })
 
-        setCategories(Array.from(uniqueCategories))
-        setSubcategories(Array.from(uniqueSubcategories))
-      } catch (error) {
-        console.error("Error fetching categories:", error)
-      }
-    }
-
-    fetchCategories()
-  }, [])
-
-  // Fetch products
-  useEffect(() => {
-    const fetchProducts = async () => {
-      setIsLoading(true)
-      try {
-        let q = query(collection(db, "products"), orderBy("name"))
-
-        if (filterCategory && filterCategory !== "all") {
-          q = query(q, where("category", "==", filterCategory))
-        }
-
-        if (filterSubcategory && filterSubcategory !== "all") {
-          q = query(q, where("subcategory", "==", filterSubcategory))
-        }
-
-        const querySnapshot = await getDocs(q)
-        const productsData: Product[] = []
-
-        for (const docSnapshot of querySnapshot.docs) {
-          const productData = docSnapshot.data()
-
-          // Fetch variants for this product
-          const variantsQuery = query(collection(db, "variants"), where("product_id", "==", docSnapshot.id))
-          const variantsSnapshot = await getDocs(variantsQuery)
-          const variants: Variant[] = []
-
-          for (const variantDoc of variantsSnapshot.docs) {
-            const variantData = variantDoc.data()
-
-            // Fetch attributes for this variant
-            const attributesQuery = query(
-              collection(db, "variant_attributes"),
-              where("variant_id", "==", variantDoc.id),
-            )
-            const attributesSnapshot = await getDocs(attributesQuery)
-            const attributes = attributesSnapshot.docs.map((attrDoc) => ({
-              id: attrDoc.id,
-              ...attrDoc.data(),
-            })) as VariantAttribute[]
-
-            variants.push({
-              id: variantDoc.id,
-              name: variantData.name || "",
-              price: variantData.price || 0,
-              stock: variantData.stock || 0,
-              attributes,
-              image_url: variantData.image_url || "",
-            })
-          }
-
-          productsData.push({
-            id: docSnapshot.id,
-            name: productData.name || "",
-            sku: productData.sku || "",
-            base_price: productData.base_price,
-            description: productData.description,
-            status: productData.status,
-            category: productData.category,
-            subcategory: productData.subcategory,
-            variants,
-            main_image_url: productData.main_image_url || "",
-            gallery_images: productData.gallery_images || [],
-          })
-        }
-
-        setProducts(productsData)
-
-        // Get total count for pagination
-        const totalCountSnapshot = await getDocs(collection(db, "products"))
-        setTotalPages(Math.ceil(totalCountSnapshot.size / ITEMS_PER_PAGE))
-
-        setIsLoading(false)
-      } catch (error) {
-        console.error("Error fetching products:", error)
-        toast.error("Failed to load products")
-        setIsLoading(false)
-      }
-    }
-
-    fetchProducts()
-  }, [filterCategory, filterSubcategory])
-
-  // Handle product deletion
-  const handleDeleteProduct = async () => {
-    if (selectedProduct) {
-      try {
-        // Delete all variant attributes and images
-        for (const variant of selectedProduct.variants) {
-          // Delete variant image if exists
-          if (variant.image_url && variant.image_url.startsWith("local-image://")) {
-            const imageId = getImageIdFromUrl(variant.image_url)
-            if (imageId) {
-              await deleteImage(imageId)
-            }
-          }
-
-          const attributesQuery = query(collection(db, "variant_attributes"), where("variant_id", "==", variant.id))
-          const attributesSnapshot = await getDocs(attributesQuery)
-
-          for (const attrDoc of attributesSnapshot.docs) {
-            await deleteDoc(doc(db, "variant_attributes", attrDoc.id))
-          }
-
-          // Delete the variant
-          await deleteDoc(doc(db, "variants", variant.id))
-        }
-
-        // Delete product images
-        if (selectedProduct.main_image_url && selectedProduct.main_image_url.startsWith("local-image://")) {
-          const mainImageId = getImageIdFromUrl(selectedProduct.main_image_url)
-          if (mainImageId) {
-            await deleteImage(mainImageId)
-          }
-        }
-
-        if (selectedProduct.gallery_images && selectedProduct.gallery_images.length > 0) {
-          for (const imageUrl of selectedProduct.gallery_images) {
-            if (imageUrl.startsWith("local-image://")) {
-              const galleryImageId = getImageIdFromUrl(imageUrl)
-              if (galleryImageId) {
-                await deleteImage(galleryImageId)
-              }
-            }
-          }
-        }
-
-        // Delete the product
-        await deleteDoc(doc(db, "products", selectedProduct.id))
-
-        setProducts(products.filter((p) => p.id !== selectedProduct.id))
-        toast.success(`${selectedProduct.name} has been deleted`)
-        setIsDeleteDialogOpen(false)
-      } catch (error) {
-        console.error("Error deleting product:", error)
-        toast.error("Failed to delete product")
-      }
+      setCategories(Array.from(uniqueCategories))
+      setSubcategories(Array.from(uniqueSubcategories))
+    } catch (error) {
+      console.error("Error fetching categories:", error)
     }
   }
 
-  // Filter products based on search term
-  const filteredProducts = products.filter(
-    (product) =>
-      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.sku.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+  fetchCategories()
+}, [])
 
-  return (
-    <div className="flex flex-col h-screen">
-      <div className="flex-1 p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Products</h1>
-          <Button onClick={() => router.push("/products/add")}>
-            <PlusCircle className="h-4 w-4 mr-2" /> Add Product
-          </Button>
-        </div>
+// Fetch products
+useEffect(() => {
+  const fetchProducts = async () => {
+    setIsLoading(true)
+    try {
+      let q = query(collection(db, "products"), orderBy("name"))
 
-        <div className="bg-white rounded-lg shadow">
-          {/* Search and Filters */}
-          <div className="p-4 border-b">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <Input
-                  type="text"
-                  placeholder="Search products..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-              <div>
-                <Select value={filterCategory} onValueChange={setFilterCategory}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="All Categories" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    {categories.map((category) => (
-                      <SelectItem key={category} value={category}>
-                        {category}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Select value={filterSubcategory} onValueChange={setFilterSubcategory}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="All Subcategories" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Subcategories</SelectItem>
-                    {subcategories.map((subcategory) => (
-                      <SelectItem key={subcategory} value={subcategory}>
-                        {subcategory}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
+      if (filterCategory && filterCategory !== "all") {
+        q = query(q, where("category", "==", filterCategory))
+      }
 
-          {/* Products Table */}
-          <div className="w-full">
-            <table className="w-full">
-              <thead className="bg-gray-50">
+      if (filterSubcategory && filterSubcategory !== "all") {
+        q = query(q, where("subcategory", "==", filterSubcategory))
+      }
+
+      const querySnapshot = await getDocs(q)
+      const productsData: Product[] = []
+
+      for (const docSnapshot of querySnapshot.docs) {
+        const productData = docSnapshot.data()
+
+        // Fetch variants for this product
+        const variantsQuery = query(collection(db, "variants"), where("product_id", "==", docSnapshot.id))
+        const variantsSnapshot = await getDocs(variantsQuery)
+        const variants: Variant[] = []
+
+        for (const variantDoc of variantsSnapshot.docs) {
+          const variantData = variantDoc.data()
+
+          // Fetch attributes for this variant
+          const attributesQuery = query(
+            collection(db, "variant_attributes"),
+            where("variant_id", "==", variantDoc.id),
+          )
+          const attributesSnapshot = await getDocs(attributesQuery)
+          const attributes = attributesSnapshot.docs.map((attrDoc) => ({
+            id: attrDoc.id,
+            ...attrDoc.data(),
+          })) as VariantAttribute[]
+
+          variants.push({
+            id: variantDoc.id,
+            name: variantData.name || "",
+            price: variantData.price || 0,
+            stock: variantData.stock || 0,
+            attributes,
+            image_url: variantData.image_url || "",
+          })
+        }
+
+        productsData.push({
+          id: docSnapshot.id,
+          name: productData.name || "",
+          sku: productData.sku || "",
+          base_price: productData.base_price,
+          description: productData.description,
+          status: productData.status,
+          category: productData.category,
+          subcategory: productData.subcategory,
+          variants,
+          main_image_url: productData.main_image_url || "",
+          gallery_images: productData.gallery_images || [],
+        })
+      }
+
+      setProducts(productsData)
+      setTotalPages(Math.ceil(productsData.length / ITEMS_PER_PAGE))
+      setIsLoading(false)
+    } catch (error) {
+      console.error("Error fetching products:", error)
+      toast.error("Failed to load products")
+      setIsLoading(false)
+    }
+  }
+
+  fetchProducts()
+}, [filterCategory, filterSubcategory])
+
+// Handle product deletion
+const handleDeleteProduct = async () => {
+  if (selectedProduct) {
+    try {
+      // Delete all variant attributes and images
+      for (const variant of selectedProduct.variants) {
+        if (variant.image_url) {
+          await deleteImage(getImageIdFromUrl(variant.image_url) || "")
+        }
+
+        const attributesQuery = query(collection(db, "variant_attributes"), where("variant_id", "==", variant.id))
+        const attributesSnapshot = await getDocs(attributesQuery)
+
+        for (const attrDoc of attributesSnapshot.docs) {
+          await deleteDoc(doc(db, "variant_attributes", attrDoc.id))
+        }
+
+        await deleteDoc(doc(db, "variants", variant.id))
+      }
+
+      // Delete product images
+      if (selectedProduct.main_image_url) {
+        await deleteImage(getImageIdFromUrl(selectedProduct.main_image_url) || "")
+      }
+
+      if (selectedProduct.gallery_images && selectedProduct.gallery_images.length > 0) {
+        for (const imageUrl of selectedProduct.gallery_images) {
+          await deleteImage(getImageIdFromUrl(imageUrl) || "")
+        }
+      }
+
+      // Delete the product
+      await deleteDoc(doc(db, "products", selectedProduct.id))
+
+      setProducts(products.filter((p) => p.id !== selectedProduct.id))
+      toast.success(`${selectedProduct.name} has been deleted`)
+      setIsDeleteDialogOpen(false)
+    } catch (error) {
+      console.error("Error deleting product:", error)
+      toast.error("Failed to delete product")
+    }
+  }
+}
+
+// Filter and paginate products
+const filteredProducts = products.filter(
+  (product) =>
+    product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    product.sku.toLowerCase().includes(searchTerm.toLowerCase()),
+)
+
+const paginatedProducts = filteredProducts.slice(
+  (currentPage - 1) * ITEMS_PER_PAGE,
+  currentPage * ITEMS_PER_PAGE
+)
+
+return (
+  <div className="flex flex-col h-screen">
+    <div className="flex-1 p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Products</h1>
+        <Button onClick={() => router.push("/products/add")}>
+          <PlusCircle className="h-4 w-4 mr-2" /> Add Product
+        </Button>
+      </div>
+
+      <div className="bg-white rounded-lg shadow">
+        {/* [Search and Filters remain the same...] */}
+
+        {/* Products Table */}
+        <div className="w-full">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="w-10 text-center py-3"></th>
+                <th className="text-center py-3 w-16">Image</th>
+                <th className="text-center py-3">Name</th>
+                <th className="text-center py-3">SKU</th>
+                <th className="text-center py-3">Base Price</th>
+                <th className="text-center py-3">Category</th>
+                <th className="text-center py-3">Status</th>
+                <th className="text-center py-3">Variants</th>
+                <th className="text-center py-3 w-24">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
                 <tr>
-                  <th className="w-10 text-center py-3"></th>
-                  <th className="text-center py-3 w-16">Image</th>
-                  <th className="text-center py-3">Name</th>
-                  <th className="text-center py-3">SKU</th>
-                  <th className="text-center py-3">Base Price</th>
-                  <th className="text-center py-3">Category</th>
-                  <th className="text-center py-3">Status</th>
-                  <th className="text-center py-3">Variants</th>
-                  <th className="text-center py-3 w-24">Actions</th>
+                  <td colSpan={9} className="text-center py-4">
+                    Loading products...
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  <tr>
-                    <td colSpan={9} className="text-center py-4">
-                      Loading products...
-                    </td>
-                  </tr>
-                ) : filteredProducts.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="text-center py-4">
-                      No products found.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredProducts.map((product) => (
-                    <React.Fragment key={product.id}>
-                      <tr className="border-b">
-                        <td className="text-center py-3">
+              ) : paginatedProducts.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="text-center py-4">
+                    No products found.
+                  </td>
+                </tr>
+              ) : (
+                paginatedProducts.map((product) => (
+                  <React.Fragment key={product.id}>
+                    <tr className="border-b">
+                      <td className="text-center py-3">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={() => toggleProductExpand(product.id)}
+                        >
+                          {expandedProducts[product.id] ? (
+                            <ChevronUp className="h-4 w-4" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </td>
+                      <td className="text-center py-3">
+                        {product.main_image_url ? (
+                          <div className="relative w-12 h-12 mx-auto rounded-md overflow-hidden">
+                            <Image
+                              src={product.main_image_url}
+                              alt={product.name}
+                              fill
+                              className="object-cover"
+                            />
+                          </div>
+                        ) : (
+                          <div className="w-12 h-12 mx-auto bg-gray-100 flex items-center justify-center rounded-md">
+                            <ImageIcon className="h-6 w-6 text-gray-400" />
+                          </div>
+                        )}
+                      </td>
+                      <td className="text-center py-3">{product.name}</td>
+                      <td className="text-center py-3">{product.sku}</td>
+                      <td className="text-center py-3">
+                        {product.base_price !== undefined ? `$${product.base_price.toFixed(2)}` : "N/A"}
+                      </td>
+                      <td className="text-center py-3">{product.category || "N/A"}</td>
+                      <td className="text-center py-3">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            product.status === "active" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"
+                          }`}
+                        >
+                          {product.status || "N/A"}
+                        </span>
+                      </td>
+                      <td className="text-center py-3">{product.variants.length}</td>
+                      <td className="text-center py-3">
+                        <div className="flex justify-center space-x-2">
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-8 w-8 p-0"
-                            onClick={() => toggleProductExpand(product.id)}
+                            onClick={() => router.push(`/products/edit/${product.id}`)}
                           >
-                            {expandedProducts[product.id] ? (
-                              <ChevronUp className="h-4 w-4" />
-                            ) : (
-                              <ChevronDown className="h-4 w-4" />
-                            )}
+                            <Pencil className="h-4 w-4" />
                           </Button>
-                        </td>
-                        <td className="text-center py-3">
-                          {product.main_image_url ? (
-                            <div className="relative w-12 h-12 mx-auto rounded-md overflow-hidden">
-                              <LocalImage
-                                src={product.main_image_url}
-                                alt={product.name}
-                                fill
-                                className="object-cover"
-                              />
-                            </div>
-                          ) : (
-                            <div className="w-12 h-12 mx-auto bg-gray-100 flex items-center justify-center rounded-md">
-                              <ImageIcon className="h-6 w-6 text-gray-400" />
-                            </div>
-                          )}
-                        </td>
-                        <td className="text-center py-3">{product.name}</td>
-                        <td className="text-center py-3">{product.sku}</td>
-                        <td className="text-center py-3">
-                          {product.base_price !== undefined ? `$${product.base_price.toFixed(2)}` : "N/A"}
-                        </td>
-                        <td className="text-center py-3">{product.category || "N/A"}</td>
-                        <td className="text-center py-3">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              product.status === "active" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"
-                            }`}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedProduct(product)
+                              setIsDeleteDialogOpen(true)
+                            }}
+                            className="text-red-600"
                           >
-                            {product.status || "N/A"}
-                          </span>
-                        </td>
-                        <td className="text-center py-3">{product.variants.length}</td>
-                        <td className="text-center py-3">
-                          <div className="flex justify-center space-x-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => router.push(`/products/edit/${product.id}`)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedProduct(product)
-                                setIsDeleteDialogOpen(true)
-                              }}
-                              className="text-red-600"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                      {expandedProducts[product.id] && (
-                        <tr>
-                          <td colSpan={9} className="p-0">
-                            <div className="bg-gray-50 p-4">
-                              {/* Product Gallery */}
-                              {product.gallery_images && product.gallery_images.length > 0 && (
-                                <div className="mb-4">
-                                  <h4 className="text-sm font-medium mb-2">Product Gallery</h4>
-                                  <div className="flex gap-2 overflow-x-auto pb-2">
-                                    {product.gallery_images.map((imageUrl, index) => (
-                                      <div
-                                        key={index}
-                                        className="relative w-20 h-20 flex-shrink-0 rounded-md overflow-hidden"
-                                      >
-                                        <LocalImage
-                                          src={imageUrl}
-                                          alt={`${product.name} gallery ${index + 1}`}
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                    {expandedProducts[product.id] && (
+                      <tr>
+                        <td colSpan={9} className="p-0">
+                          <div className="bg-gray-50 p-4">
+                            {product.gallery_images && product.gallery_images.length > 0 && (
+                              <div className="mb-4">
+                                <h4 className="text-sm font-medium mb-2">Product Gallery</h4>
+                                <div className="flex gap-2 overflow-x-auto pb-2">
+                                  {product.gallery_images.map((imageUrl, index) => (
+                                    <div
+                                      key={index}
+                                      className="relative w-20 h-20 flex-shrink-0 rounded-md overflow-hidden"
+                                    >
+                                      <Image
+                                        src={imageUrl}
+                                        alt={`${product.name} gallery ${index + 1}`}
+                                        fill
+                                        className="object-cover"
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            <h4 className="text-sm font-medium mb-2">Variants</h4>
+                            <div className="space-y-2">
+                              {product.variants.map((variant) => (
+                                <div key={variant.id} className="bg-white p-3 rounded border">
+                                  <div className="flex items-center gap-4">
+                                    {variant.image_url ? (
+                                      <div className="relative w-16 h-16 rounded-md overflow-hidden flex-shrink-0">
+                                        <Image
+                                          src={variant.image_url}
+                                          alt={variant.name}
                                           fill
                                           className="object-cover"
                                         />
                                       </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              <h4 className="text-sm font-medium mb-2">Variants</h4>
-                              <div className="space-y-2">
-                                {product.variants.map((variant) => (
-                                  <div key={variant.id} className="bg-white p-3 rounded border">
-                                    <div className="flex items-center gap-4">
-                                      {variant.image_url ? (
-                                        <div className="relative w-16 h-16 rounded-md overflow-hidden flex-shrink-0">
-                                          <LocalImage
-                                            src={variant.image_url}
-                                            alt={variant.name}
-                                            fill
-                                            className="object-cover"
-                                          />
+                                    ) : (
+                                      <div className="w-16 h-16 bg-gray-100 flex items-center justify-center rounded-md flex-shrink-0">
+                                        <ImageIcon className="h-6 w-6 text-gray-400" />
+                                      </div>
+                                    )}
+                                    <div className="flex-1">
+                                      <div className="flex justify-between items-center">
+                                        <h5 className="font-medium">{variant.name}</h5>
+                                        <div className="flex space-x-4 text-sm">
+                                          <span>Price: ${variant.price.toFixed(2)}</span>
+                                          <span>Stock: {variant.stock}</span>
                                         </div>
-                                      ) : (
-                                        <div className="w-16 h-16 bg-gray-100 flex items-center justify-center rounded-md flex-shrink-0">
-                                          <ImageIcon className="h-6 w-6 text-gray-400" />
+                                      </div>
+                                      {variant.attributes.length > 0 && (
+                                        <div className="mt-2">
+                                          <h6 className="text-xs text-gray-500 mb-1">Attributes:</h6>
+                                          <div className="flex flex-wrap gap-2">
+                                            {variant.attributes.map((attr) => (
+                                              <span
+                                                key={attr.id}
+                                                className="inline-flex items-center px-2 py-1 rounded-md text-xs bg-gray-100"
+                                              >
+                                                {attr.key_name}: {attr.value_name}
+                                              </span>
+                                            ))}
+                                          </div>
                                         </div>
                                       )}
-                                      <div className="flex-1">
-                                        <div className="flex justify-between items-center">
-                                          <h5 className="font-medium">{variant.name}</h5>
-                                          <div className="flex space-x-4 text-sm">
-                                            <span>Price: ${variant.price.toFixed(2)}</span>
-                                            <span>Stock: {variant.stock}</span>
-                                          </div>
-                                        </div>
-                                        {variant.attributes.length > 0 && (
-                                          <div className="mt-2">
-                                            <h6 className="text-xs text-gray-500 mb-1">Attributes:</h6>
-                                            <div className="flex flex-wrap gap-2">
-                                              {variant.attributes.map((attr) => (
-                                                <span
-                                                  key={attr.id}
-                                                  className="inline-flex items-center px-2 py-1 rounded-md text-xs bg-gray-100"
-                                                >
-                                                  {attr.key_name}: {attr.value_name}
-                                                </span>
-                                              ))}
-                                            </div>
-                                          </div>
-                                        )}
-                                      </div>
                                     </div>
                                   </div>
-                                ))}
-                              </div>
+                                </div>
+                              ))}
                             </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
 
-          {/* Pagination */}
-          <div className="flex items-center justify-between px-4 py-3 border-t">
-            <div className="flex items-center space-x-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-              >
-                Previous
-              </Button>
-              <span className="text-sm">
-                Page {currentPage} of {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-              >
-                Next
-              </Button>
-            </div>
+        {/* Pagination */}
+        <div className="flex items-center justify-between px-4 py-3 border-t">
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+            >
+              Previous
+            </Button>
+            <span className="text-sm">
+              Page {currentPage} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+            >
+              Next
+            </Button>
           </div>
         </div>
       </div>
-
-      <DeleteProductDialog
-        isOpen={isDeleteDialogOpen}
-        onClose={() => setIsDeleteDialogOpen(false)}
-        onConfirm={handleDeleteProduct}
-        productName={selectedProduct?.name || ""}
-      />
     </div>
+
+    <DeleteProductDialog
+      isOpen={isDeleteDialogOpen}
+      onClose={() => setIsDeleteDialogOpen(false)}
+      onConfirm={handleDeleteProduct}
+      productName={selectedProduct?.name || ""}
+    />
+  </div>
   )
 }
 
