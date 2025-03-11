@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import Sidebar from "../src/components/Sidebar";
+import Script from 'next/script';
 import { Toaster } from "@/components/ui/sonner"
 
 
@@ -27,6 +28,10 @@ export default function RootLayout({
         <main className="flex-1 p-4 max-w-7xl overflow-y-auto">
           {children}
           <Toaster />
+          <Script
+          src="https://cdn.qz.io/2.1.7/qz-tray.js"
+          strategy="afterInteractive"
+        />
         </main>
       </body>
     </html>

@@ -473,6 +473,8 @@ export default function AddProductPage() {
                       </>
                     )}
                     <SelectItem value="other">Other</SelectItem>
+                    <SelectItem value="accessories">Accessories</SelectItem>
+                    <SelectItem value="kitchen appliancess">kitchen appliances</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
