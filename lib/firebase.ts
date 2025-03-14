@@ -2,6 +2,8 @@
 import { getFirestore } from "firebase/firestore";
 import { initializeApp, getApps } from "firebase/app"
 import { getAuth } from "firebase/auth"
+import {  collection, doc, getDoc, query, orderBy, getDocs } from "firebase/firestore"
+import type { Order } from "./type";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -18,5 +20,46 @@ const db = getFirestore(app)
 const auth = getAuth(app)
 
 export { db, auth, app }
+
+export async function getOrderById(orderId: string): Promise<Order | null> {
+  try {
+    const orderRef = doc(db, "orders", orderId)
+    const orderSnap = await getDoc(orderRef)
+
+    if (!orderSnap.exists()) {
+      return null
+    }
+
+    return {
+      id: orderSnap.id,
+      ...orderSnap.data(),
+    } as Order
+  } catch (error) {
+    console.error("Error fetching order:", error)
+    return null
+  }
+}
+
+// // Get recent orders
+// export async function getRecentOrders(limit = 10): Promise<Order[]> {
+//   try {
+//     const ordersRef = collection(db, "orders")
+//     const q = query(ordersRef, orderBy("createdAt", "desc"), limit)
+//     const querySnapshot = await getDocs(q)
+
+//     const orders: Order[] = []
+//     querySnapshot.forEach((doc) => {
+//       orders.push({
+//         id: doc.id,
+//         ...doc.data(),
+//       } as Order)
+//     })
+
+//     return orders
+//   } catch (error) {
+//     console.error("Error fetching recent orders:", error)
+//     return []
+//   }
+// }
 
 
