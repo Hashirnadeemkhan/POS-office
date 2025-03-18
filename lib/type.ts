@@ -23,3 +23,28 @@ export interface OrderItem {
     status: "completed" | "pending" | "cancelled"
   }
   
+
+  export interface RestaurantAccount {
+    id: string; // Firebase UID
+    restaurantName: string;
+    restaurantType: string;
+    email: string;
+    ownerName: string;
+    activationToken: string;
+    status: 'active' | 'deactive';
+    createdAt: string;
+  }
+  
+  export interface CreateRestaurantInput {
+    restaurantName: string;
+    restaurantType: string;
+    email: string;
+    password: string;
+    ownerName: string;
+  }
+  
+  export interface UpdateRestaurantInput {
+    restaurantName?: string;
+    restaurantType?: string;
+    ownerName?: string;
+  }
