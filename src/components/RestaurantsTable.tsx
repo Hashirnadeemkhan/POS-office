@@ -7,10 +7,11 @@ import { collection, query, getDocs, doc, updateDoc, deleteDoc, orderBy, limit }
 import { db } from "@/lib/firebase"
 import { PlusCircle, Eye, Pencil, Trash2, Power, PowerOff, MoreHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Table, TableBody,  TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
+import Link from "next/link"
 import { toast } from "sonner"
 import { formatDistanceToNow } from "date-fns"
 import {
@@ -45,7 +46,6 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
   const [isLoading, setIsLoading] = useState(true)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [restaurantToDelete, setRestaurantToDelete] = useState<string | null>(null)
-  const [showAll, setShowAll] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -83,37 +83,7 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
     }
   }
 
-  const fetchAllRestaurants = async () => {
-    setIsLoading(true)
-    try {
-      const q = query(collection(db, "restaurants"), orderBy("createdAt", "desc"))
-      const querySnapshot = await getDocs(q)
 
-      const restaurantsList: Restaurant[] = []
-      querySnapshot.forEach((doc) => {
-        const data = doc.data()
-        restaurantsList.push({
-          id: doc.id,
-          name: data.name || "",
-          email: data.email || "",
-          ownerName: data.ownerName || "",
-          activationToken: data.activationToken || "",
-          isActive: data.isActive || false,
-          createdAt: data.createdAt?.toDate() || new Date(),
-          lastUpdated: data.lastUpdated?.toDate() || new Date(),
-          tokenExpiresAt: data.tokenExpiresAt ? new Date(data.tokenExpiresAt) : undefined,
-        })
-      })
-
-      setRestaurants(restaurantsList)
-      setShowAll(true)
-    } catch (error) {
-      console.error("Error fetching all restaurants:", error)
-      toast.error("Failed to load all restaurants")
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   const handleToggleStatus = async (id: string, currentStatus: boolean) => {
     try {
@@ -170,7 +140,7 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
         <CardHeader>
           <CardTitle>Restaurants</CardTitle>
           <CardDescription>
-            {showAll ? "Showing all restaurant accounts." : "Showing the 3 most recent restaurant accounts."}
+            Showing the 3 most recent restaurant accounts.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -282,14 +252,20 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
             </TableBody>
           </Table>
 
-          {/* Conditionally render the "View All" button based on the prop */}
-          {showViewAllButton && !showAll && restaurants.length > 0 && (
-            <div className="flex justify-center mt-6">
-              <Button onClick={fetchAllRestaurants} className="bg-purple-600 hover:bg-purple-700">
-                View All Restaurants
-              </Button>
-            </div>
-          )}
+     
+
+{
+  showViewAllButton && (
+    <div className="flex justify-center mt-6">
+      <Link href={"/admin/restaurants"}>
+        <Button className="bg-purple-600 hover:bg-purple-700">
+          View All Restaurants
+        </Button>
+      </Link>
+    </div>
+  )
+}
+         
         </CardContent>
       </Card>
 

@@ -3,6 +3,7 @@ import { getFirestore } from "firebase/firestore";
 import { initializeApp, getApps } from "firebase/app"
 import { getAuth } from "firebase/auth"
 import {  collection, doc, getDoc, query, orderBy, getDocs } from "firebase/firestore"
+import { getStorage } from "firebase/storage";
 import type { Order } from "./type";
 
 const firebaseConfig = {
@@ -18,6 +19,7 @@ const firebaseConfig = {
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0]
 const db = getFirestore(app)
 const auth = getAuth(app)
+export const storage = getStorage(app);
 
 export { db, auth, app }
 
