@@ -1,10 +1,12 @@
-// lib/firebase-admin.ts
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 
-// Load the service account key
-const serviceAccount = require("../config/serviceAccountKey.json");
+// Load service account from environment variable
+const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_KEY
+  ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY)
+  : {};
+
 console.log("Service Account:", serviceAccount); // Debug log
 
 // Initialize Firebase Admin SDK
