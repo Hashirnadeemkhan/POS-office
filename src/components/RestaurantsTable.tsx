@@ -1,13 +1,13 @@
 // src/components/RestaurantsTable.tsx
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { collection, query, getDocs, doc, updateDoc, deleteDoc, orderBy, limit } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { PlusCircle, Eye, Pencil, Trash2, Power, PowerOff, MoreHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Table, TableBody,  TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
@@ -38,7 +38,7 @@ interface Restaurant {
 }
 
 interface RestaurantsTableProps {
-  showViewAllButton?: boolean // Optional prop to control "View All" button visibility
+  showViewAllButton?: boolean // Controls "View All" button visibility and limits to 3 if true
 }
 
 export default function RestaurantsTable({ showViewAllButton = true }: RestaurantsTableProps) {
@@ -48,16 +48,15 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
   const [restaurantToDelete, setRestaurantToDelete] = useState<string | null>(null)
   const router = useRouter()
 
-  useEffect(() => {
-    fetchLimitedRestaurants()
-  }, [])
-
-  const fetchLimitedRestaurants = async () => {
+  const fetchRestaurants = useCallback(async () => {
     setIsLoading(true)
     try {
-      const q = query(collection(db, "restaurants"), orderBy("createdAt", "desc"), limit(3))
-      const querySnapshot = await getDocs(q)
+      const restaurantsRef = collection(db, "restaurants")
+      const q = showViewAllButton
+        ? query(restaurantsRef, orderBy("createdAt", "desc"), limit(3))
+        : query(restaurantsRef, orderBy("createdAt", "desc"))
 
+      const querySnapshot = await getDocs(q)
       const restaurantsList: Restaurant[] = []
       querySnapshot.forEach((doc) => {
         const data = doc.data()
@@ -73,7 +72,6 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
           tokenExpiresAt: data.tokenExpiresAt ? new Date(data.tokenExpiresAt) : undefined,
         })
       })
-
       setRestaurants(restaurantsList)
     } catch (error) {
       console.error("Error fetching restaurants:", error)
@@ -81,9 +79,11 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [showViewAllButton]) // Dependency for useCallback
 
-
+  useEffect(() => {
+    fetchRestaurants()
+  }, [fetchRestaurants]) // Now depends on memoized fetchRestaurants
 
   const handleToggleStatus = async (id: string, currentStatus: boolean) => {
     try {
@@ -92,13 +92,11 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
         isActive: !currentStatus,
         lastUpdated: new Date(),
       })
-
       setRestaurants(
         restaurants.map((restaurant) =>
-          restaurant.id === id ? { ...restaurant, isActive: !currentStatus, lastUpdated: new Date() } : restaurant,
-        ),
+          restaurant.id === id ? { ...restaurant, isActive: !currentStatus, lastUpdated: new Date() } : restaurant
+        )
       )
-
       toast.success(`Restaurant ${currentStatus ? "deactivated" : "activated"} successfully`)
     } catch (error) {
       console.error("Error updating restaurant status:", error)
@@ -113,7 +111,6 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
 
   const confirmDelete = async () => {
     if (!restaurantToDelete) return
-
     try {
       await deleteDoc(doc(db, "restaurants", restaurantToDelete))
       setRestaurants(restaurants.filter((restaurant) => restaurant.id !== restaurantToDelete))
@@ -140,7 +137,7 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
         <CardHeader>
           <CardTitle>Restaurants</CardTitle>
           <CardDescription>
-            Showing the 3 most recent restaurant accounts.
+            {showViewAllButton ? "Showing the 3 most recent restaurant accounts." : "All restaurant accounts."}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -252,20 +249,13 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
             </TableBody>
           </Table>
 
-     
-
-{
-  showViewAllButton && (
-    <div className="flex justify-center mt-6">
-      <Link href={"/admin/restaurants"}>
-        <Button className="bg-purple-600 hover:bg-purple-700">
-          View All Restaurants
-        </Button>
-      </Link>
-    </div>
-  )
-}
-         
+          {showViewAllButton && (
+            <div className="flex justify-center mt-6">
+              <Link href={"/admin/restaurants"}>
+                <Button className="bg-purple-600 hover:bg-purple-700">View All Restaurants</Button>
+              </Link>
+            </div>
+          )}
         </CardContent>
       </Card>
 

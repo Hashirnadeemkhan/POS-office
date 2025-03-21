@@ -15,9 +15,8 @@ interface UserProfile {
   email: string
   phoneNumber: string
   role: string
-  address: string
   joinDate: string
-  restaurant: string
+
 }
 
 export default function ViewProfile() {
@@ -41,9 +40,7 @@ export default function ViewProfile() {
             email: currentUser?.email || "",
             phoneNumber: userData.phoneNumber || "",
             role: userData.role || "Staff",
-            address: userData.address || "",
             joinDate: userData.joinDate || new Date().toISOString().split("T")[0],
-            restaurant: userData.restaurant || "Main Branch",
           })
         } else {
           setProfile({
@@ -51,9 +48,7 @@ export default function ViewProfile() {
             email: currentUser?.email || "",
             phoneNumber: currentUser?.phoneNumber || "",
             role: "Staff",
-            address: "",
             joinDate: new Date().toISOString().split("T")[0],
-            restaurant: "Main Branch",
           })
         }
       } catch (error) {
@@ -119,22 +114,6 @@ export default function ViewProfile() {
           </div>
 
           <Separator />
-
-          <div className="space-y-1">
-            <div className="text-sm font-medium text-muted-foreground">Restaurant</div>
-            <div className="flex items-center">
-              <Building className="w-4 h-4 mr-2 text-muted-foreground" />
-              <span>{profile?.restaurant}</span>
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <div className="text-sm font-medium text-muted-foreground">Address</div>
-            <div className="flex items-center">
-              <MapPin className="w-4 h-4 mr-2 text-muted-foreground" />
-              <span>{profile?.address || "Not provided"}</span>
-            </div>
-          </div>
 
           <div className="space-y-1">
             <div className="text-sm font-medium text-muted-foreground">Join Date</div>

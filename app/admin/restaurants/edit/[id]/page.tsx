@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+
 import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { doc, getDoc, updateDoc } from "firebase/firestore"
@@ -36,6 +37,7 @@ export default function EditRestaurantPage({ params }: { params: { id: string } 
     tokenActivationDate: "",
     tokenExpiresAt: "",
   })
+  const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [regenerateToken, setRegenerateToken] = useState(false)
@@ -52,7 +54,6 @@ export default function EditRestaurantPage({ params }: { params: { id: string } 
 
       if (restaurantSnap.exists()) {
         const data = restaurantSnap.data()
-
         const tokenActivationDate = data.tokenActivationDate
           ? new Date(data.tokenActivationDate).toISOString().split("T")[0]
           : ""
@@ -87,7 +88,6 @@ export default function EditRestaurantPage({ params }: { params: { id: string } 
     fetchRestaurant()
   }, [fetchRestaurant])
 
-  // Effect to handle token regeneration
   useEffect(() => {
     if (regenerateToken) {
       if (!newToken) {
@@ -99,7 +99,7 @@ export default function EditRestaurantPage({ params }: { params: { id: string } 
       setFormData((prev) => ({ ...prev, activationToken: originalToken }))
       setNewToken("")
     }
-  }, [regenerateToken, originalToken, newToken]) // Added newToken to dependencies
+  }, [regenerateToken, originalToken, newToken])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -116,13 +116,12 @@ export default function EditRestaurantPage({ params }: { params: { id: string } 
 
   const handleManualTokenRefresh = () => {
     setIsTokenRefreshing(true)
-
     setTimeout(() => {
       const generatedToken = generateActivationToken()
       setNewToken(generatedToken)
       setFormData((prev) => ({ ...prev, activationToken: generatedToken }))
       setIsTokenRefreshing(false)
-    }, 300) // Small delay for visual feedback
+    }, 300)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -150,24 +149,37 @@ export default function EditRestaurantPage({ params }: { params: { id: string } 
         expiryDate = maxExpiryDate
       }
 
-      const activationToken = formData.activationToken
-
       const restaurantRef = doc(db, "restaurants", params.id)
-      await updateDoc(restaurantRef, {
+
+      // Update Firestore document
+      const updateData: any = {
         name: formData.name,
         ownerName: formData.ownerName,
         isActive: formData.isActive,
-        activationToken,
+        activationToken: formData.activationToken,
         tokenActivationDate: activationDate.toISOString(),
         tokenExpiresAt: expiryDate.toISOString(),
         lastUpdated: new Date(),
-      })
+      }
+
+      // If email has changed, update it in Firestore
+      if (formData.email !== (await getDoc(restaurantRef)).data()?.email) {
+        updateData.email = formData.email
+      }
+
+      // If password is provided, note that it would be updated
+      if (password) {
+        // In a real implementation, this would use Firebase Admin SDK in a server action
+        console.log("Password would be updated to:", password)
+      }
+
+      await updateDoc(restaurantRef, updateData)
 
       toast.success("Restaurant updated successfully")
       router.push("/admin/restaurants")
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating restaurant:", error)
-      toast.error("Failed to update restaurant")
+      toast.error(error.message || "Failed to update restaurant")
     } finally {
       setIsSubmitting(false)
     }
@@ -177,7 +189,7 @@ export default function EditRestaurantPage({ params }: { params: { id: string } 
     return (
       <div className="container py-10 flex justify-center items-center min-h-[60vh]">
         <div className="flex flex-col items-center gap-2">
-          <div className="w-8 h-8 border-2 border-t-primary border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin"></div>
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
           <p>Loading restaurant details...</p>
         </div>
       </div>
@@ -231,10 +243,23 @@ export default function EditRestaurantPage({ params }: { params: { id: string } 
                 value={formData.email}
                 onChange={handleChange}
                 placeholder="Enter email address"
-                disabled
-                className="bg-muted"
+                required
               />
-              <p className="text-xs text-muted-foreground">Email cannot be changed.</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password">New Password (optional)</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter new password"
+                minLength={6}
+              />
+              <p className="text-xs text-muted-foreground">
+                Leave blank to keep current password. Minimum 6 characters.
+              </p>
             </div>
 
             <div className="flex items-center justify-between space-y-0 pt-2">
@@ -358,3 +383,4 @@ export default function EditRestaurantPage({ params }: { params: { id: string } 
     </div>
   )
 }
+

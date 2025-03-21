@@ -20,12 +20,10 @@ import { Separator } from "@/components/ui/separator"
 interface UserProfile {
   displayName: string
   email: string
-  photoURL: string
   phoneNumber: string
   role: string
-  address: string
   joinDate: string
-  restaurant: string
+
 }
 
 export default function EditProfile() {
@@ -37,12 +35,10 @@ export default function EditProfile() {
   const [profile, setProfile] = useState<UserProfile>({
     displayName: "",
     email: "",
-    photoURL: "",
     phoneNumber: "",
     role: "",
-    address: "",
     joinDate: "",
-    restaurant: "",
+    
   })
 
   const fetchUserProfile = useCallback(
@@ -58,24 +54,20 @@ export default function EditProfile() {
           setProfile({
             displayName: currentUser?.displayName || "User",
             email: currentUser?.email || "",
-            photoURL: currentUser?.photoURL || "",
             phoneNumber: userData.phoneNumber || "",
             role: userData.role || "Staff",
-            address: userData.address || "",
             joinDate: userData.joinDate || new Date().toISOString().split("T")[0],
-            restaurant: userData.restaurant || "Main Branch",
+            
           })
         } else {
           // If no profile document exists yet, use basic auth data
           setProfile({
             displayName: currentUser?.displayName || "User",
             email: currentUser?.email || "",
-            photoURL: currentUser?.photoURL || "",
             phoneNumber: currentUser?.phoneNumber || "",
             role: "Staff",
-            address: "",
             joinDate: new Date().toISOString().split("T")[0],
-            restaurant: "Main Branch",
+           
           })
         }
       } catch (error) {
@@ -129,8 +121,8 @@ export default function EditProfile() {
       await updateDoc(doc(db, "users", currentUser.uid), {
         phoneNumber: profile.phoneNumber,
         role: profile.role,
-        address: profile.address,
-        restaurant: profile.restaurant,
+     
+    
         // Don't update joinDate as it should remain the original
       })
 
@@ -144,14 +136,7 @@ export default function EditProfile() {
     }
   }
 
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((part) => part[0])
-      .join("")
-      .toUpperCase()
-      .substring(0, 2)
-  }
+
 
   if (loading) {
     return (
@@ -199,16 +184,7 @@ export default function EditProfile() {
                 <p className="text-xs text-muted-foreground">Email cannot be changed</p>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="phoneNumber">Phone Number</Label>
-                <Input
-                  id="phoneNumber"
-                  name="phoneNumber"
-                  value={profile.phoneNumber}
-                  onChange={handleChange}
-                  placeholder="Your phone number"
-                />
-              </div>
+              
 
               <Separator />
 
@@ -227,32 +203,6 @@ export default function EditProfile() {
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="restaurant">Restaurant</Label>
-                <Select value={profile.restaurant} onValueChange={(value) => handleSelectChange("restaurant", value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select restaurant" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Main Branch">Main Branch</SelectItem>
-                    <SelectItem value="Downtown">Downtown</SelectItem>
-                    <SelectItem value="Uptown">Uptown</SelectItem>
-                    <SelectItem value="West Side">West Side</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="address">Address</Label>
-                <Textarea
-                  id="address"
-                  name="address"
-                  value={profile.address}
-                  onChange={handleChange}
-                  placeholder="Your address"
-                  rows={3}
-                />
-              </div>
             </CardContent>
             <CardFooter className="flex justify-end">
               <Button
