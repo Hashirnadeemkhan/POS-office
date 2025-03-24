@@ -1,10 +1,11 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { collection, query, orderBy, onSnapshot } from "firebase/firestore" // Replace getDocs with onSnapshot
-import { db } from "@/lib/firebase"
+import { collection, query, orderBy, onSnapshot } from "firebase/firestore"
+import { auth, db } from "@/lib/firebase"
 import RestaurantsTable from "@/src/components/RestaurantsTable"
 import { Building2, Users, UserMinus } from "lucide-react"
+import { onAuthStateChanged } from "firebase/auth"
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -13,20 +14,28 @@ export default function Dashboard() {
     deactive: 0,
     loading: true,
   })
-  const [userName, setUserName] = useState("Admin")
+  const [userName, setUserName] = useState("Admin") // Default value
 
   useEffect(() => {
-    // Get user name from localStorage or auth state if available
-    const storedUser = localStorage.getItem("userName")
-    if (storedUser) {
-      setUserName(storedUser)
-    }
+    // Listen for authentication state changes
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        // If user is logged in, set their email or display name
+        const displayName = user.displayName || user.email || "Admin"
+        setUserName(displayName)
+        localStorage.setItem("userName", displayName) // Optional: Store in localStorage
+      } else {
+        // If no user is logged in, fallback to "Admin"
+        setUserName("Admin")
+        localStorage.removeItem("userName")
+      }
+    })
 
     // Set up real-time listener for restaurant stats
     const restaurantsRef = collection(db, "restaurants")
     const q = query(restaurantsRef, orderBy("createdAt", "desc"))
 
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+    const unsubscribeSnapshot = onSnapshot(q, (querySnapshot) => {
       let totalCount = 0
       let activeCount = 0
       let deactiveCount = 0
@@ -51,8 +60,11 @@ export default function Dashboard() {
       setStats((prev) => ({ ...prev, loading: false }))
     })
 
-    // Cleanup the listener when the component unmounts
-    return () => unsubscribe()
+    // Cleanup listeners when the component unmounts
+    return () => {
+      unsubscribeAuth()
+      unsubscribeSnapshot()
+    }
   }, [])
 
   // Calculate percentages for progress bars

@@ -1,16 +1,16 @@
 "use client"
 
-import { useState } from "react"
+import React, { useState } from "react"
 import { useRouter } from "next/navigation"
-import { collection, addDoc, serverTimestamp } from "firebase/firestore"
+import { doc, setDoc, serverTimestamp } from "firebase/firestore"
 import { createUserWithEmailAndPassword } from "firebase/auth"
-import { db, auth } from "@/lib/firebase"
+import { db, secondaryAuth } from "@/lib/firebase" // Use secondaryAuth instead of auth
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { ArrowLeft, Loader2 } from "lucide-react"
 import {
   Select,
   SelectContent,
@@ -34,7 +34,7 @@ export default function CreateAdminPage() {
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
 
-  const handleRoleChange = (value: string) => {
+  const handleRoleChange = (value: "admin" | "superadmin") => {
     setFormData((prev) => ({ ...prev, role: value }))
   }
 
@@ -43,28 +43,35 @@ export default function CreateAdminPage() {
     setIsSubmitting(true)
 
     try {
-      // Create the user in Firebase Authentication
-      const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password)
+      // Create the user using the secondary Firebase app's auth instance
+      const userCredential = await createUserWithEmailAndPassword(
+        secondaryAuth,
+        formData.email,
+        formData.password
+      )
+      const user = userCredential.user
 
-      // Store admin data in Firestore
-      await addDoc(collection(db, "adminUsers"), {
+      // Store the user data in Firestore
+      await setDoc(doc(db, "adminUsers", user.uid), {
         name: formData.name,
         email: formData.email,
         role: formData.role,
-        uid: userCredential.user.uid,
+        uid: user.uid,
         createdAt: serverTimestamp(),
         lastUpdated: serverTimestamp(),
       })
+
+      // Optionally, sign out the user from the secondary app to clean up
+      await secondaryAuth.signOut()
 
       toast.success("Admin account created successfully")
       router.push("/admin/admins")
     } catch (error: any) {
       console.error("Error creating admin:", error)
-
       if (error.code === "auth/email-already-in-use") {
         toast.error("Email is already in use. Please use a different email.")
       } else {
-        toast.error("Failed to create admin account")
+        toast.error("Failed to create admin account: " + error.message)
       }
     } finally {
       setIsSubmitting(false)
@@ -129,10 +136,7 @@ export default function CreateAdminPage() {
 
             <div className="space-y-2">
               <Label htmlFor="role">Role</Label>
-              <Select 
-                value={formData.role} 
-                onValueChange={handleRoleChange}
-              >
+              <Select value={formData.role} onValueChange={handleRoleChange}>
                 <SelectTrigger id="role">
                   <SelectValue placeholder="Select role" />
                 </SelectTrigger>
@@ -147,7 +151,11 @@ export default function CreateAdminPage() {
             </div>
           </CardContent>
           <CardFooter>
-            <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700" disabled={isSubmitting}>
+            <Button
+              type="submit"
+              className="w-full bg-purple-600 hover:bg-purple-700"
+              disabled={isSubmitting}
+            >
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

@@ -1,77 +1,66 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { auth, db } from "@/lib/firebase"
 import { doc, getDoc } from "firebase/firestore"
-import type { User } from "firebase/auth"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Loader2, Mail, Phone, MapPin, Building, Calendar, Edit, ArrowLeft } from "lucide-react"
-import { Separator } from "@/components/ui/separator"
+import { Loader2, Mail, Phone, Calendar, Edit, ArrowLeft } from "lucide-react"
+import { useAuth } from "@/lib/auth-context"
 
 interface UserProfile {
   displayName: string
   email: string
   phoneNumber: string
-  role: string
-  joinDate: string
-
+  role: "admin" | "superadmin"
+  joinDate?: string
 }
 
 export default function ViewProfile() {
   const router = useRouter()
+  const { userId, userRole } = useAuth()
   const [loading, setLoading] = useState(true)
   const [profile, setProfile] = useState<UserProfile | null>(null)
-  const [currentUser, setCurrentUser] = useState<User | null>(null)
 
-  const fetchUserProfile = useCallback(
-    async (userId: string) => {
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      if (!userId) {
+        router.push("/admin/login")
+        return
+      }
+
       try {
         setLoading(true)
-        const userDoc = await getDoc(doc(db, "users", userId))
+        const user = auth.currentUser
 
-        if (userDoc.exists()) {
-          const userData = userDoc.data() as Omit<UserProfile, "email" | "displayName">
-
-          // Combine Firebase Auth user data with Firestore profile data
-          setProfile({
-            displayName: currentUser?.displayName || "User",
-            email: currentUser?.email || "",
-            phoneNumber: userData.phoneNumber || "",
-            role: userData.role || "Staff",
-            joinDate: userData.joinDate || new Date().toISOString().split("T")[0],
-          })
-        } else {
-          setProfile({
-            displayName: currentUser?.displayName || "User",
-            email: currentUser?.email || "",
-            phoneNumber: currentUser?.phoneNumber || "",
-            role: "Staff",
-            joinDate: new Date().toISOString().split("T")[0],
-          })
+        if (!user) {
+          router.push("/admin/login")
+          return
         }
+
+        // Get the admin user document from Firestore
+        const userDoc = await getDoc(doc(db, "adminUsers", userId))
+        const userData = userDoc.exists() ? userDoc.data() : {}
+
+        setProfile({
+          // Always use the current authenticated user's display name and email
+          displayName: user.displayName || userData.name || "User",
+          email: user.email || "Email not available",
+          phoneNumber: userData.phoneNumber || "",
+          role: userRole || userData.role || "admin",
+          joinDate: userData.createdAt?.toDate().toLocaleDateString() || "Not available",
+        })
       } catch (error) {
         console.error("Error fetching profile:", error)
+        router.push("/admin/login")
       } finally {
         setLoading(false)
       }
-    },
-    [currentUser],
-  )
+    }
 
-  useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(async (user) => {
-      if (user) {
-        setCurrentUser(user)
-        await fetchUserProfile(user.uid)
-      } else {
-        router.push("/admin/login")
-      }
-    })
-
-    return () => unsubscribe()
-  }, [router, fetchUserProfile])
+    fetchUserProfile()
+  }, [userId, userRole, router])
 
   if (loading) {
     return (
@@ -79,6 +68,10 @@ export default function ViewProfile() {
         <Loader2 className="w-8 h-8 text-primary animate-spin" />
       </div>
     )
+  }
+
+  if (!profile) {
+    return <div>Error loading profile. Please try again.</div>
   }
 
   return (
@@ -98,10 +91,15 @@ export default function ViewProfile() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1">
+            <div className="text-sm font-medium text-muted-foreground">Name</div>
+            <div>{profile.displayName}</div>
+          </div>
+
+          <div className="space-y-1">
             <div className="text-sm font-medium text-muted-foreground">Email</div>
             <div className="flex items-center">
               <Mail className="w-4 h-4 mr-2 text-muted-foreground" />
-              <span>{profile?.email}</span>
+              <span>{profile.email}</span>
             </div>
           </div>
 
@@ -109,17 +107,20 @@ export default function ViewProfile() {
             <div className="text-sm font-medium text-muted-foreground">Phone Number</div>
             <div className="flex items-center">
               <Phone className="w-4 h-4 mr-2 text-muted-foreground" />
-              <span>{profile?.phoneNumber || "Not provided"}</span>
+              <span>{profile.phoneNumber || "Not provided"}</span>
             </div>
           </div>
 
-          <Separator />
+          <div className="space-y-1">
+            <div className="text-sm font-medium text-muted-foreground">Role</div>
+            <div>{profile.role}</div>
+          </div>
 
           <div className="space-y-1">
             <div className="text-sm font-medium text-muted-foreground">Join Date</div>
             <div className="flex items-center">
               <Calendar className="w-4 h-4 mr-2 text-muted-foreground" />
-              <span>{profile?.joinDate}</span>
+              <span>{profile.joinDate}</span>
             </div>
           </div>
         </CardContent>
@@ -134,3 +135,4 @@ export default function ViewProfile() {
     </div>
   )
 }
+

@@ -1,13 +1,14 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import React, { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { collection, getDocs, query, where, deleteDoc, doc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { toast } from "sonner"
-import { Plus, Pencil, Trash2, Loader2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Loader2 } from "lucide-react"
+import { useAuth } from "@/lib/auth-context"
 import {
   Table,
   TableBody,
@@ -37,21 +38,32 @@ interface AdminUser {
 }
 
 export default function AdminsPage() {
+  const { userId, userRole, loading: authLoading } = useAuth()
   const [admins, setAdmins] = useState<AdminUser[]>([])
   const [loading, setLoading] = useState(true)
   const [deleteLoading, setDeleteLoading] = useState<string | null>(null)
   const router = useRouter()
 
+  // Redirect if not authenticated or not an admin
   useEffect(() => {
-    fetchAdmins()
-  }, [])
+    if (!authLoading && (!userId || !userRole)) {
+      toast.error("You must be an admin to access this page.")
+      router.push("/admin/login")
+    }
+  }, [authLoading, userId, userRole, router])
+
+  useEffect(() => {
+    if (userId && userRole) {
+      fetchAdmins()
+    }
+  }, [userId, userRole])
 
   const fetchAdmins = async () => {
     try {
       setLoading(true)
       const q = query(collection(db, "adminUsers"), where("role", "in", ["admin", "superadmin"]))
       const querySnapshot = await getDocs(q)
-      
+
       const adminsList: AdminUser[] = []
       querySnapshot.forEach((doc) => {
         const data = doc.data()
@@ -63,7 +75,7 @@ export default function AdminsPage() {
           createdAt: data.createdAt,
         })
       })
-      
+
       setAdmins(adminsList)
     } catch (error) {
       console.error("Error fetching admins:", error)
@@ -89,13 +101,21 @@ export default function AdminsPage() {
 
   const formatDate = (timestamp: any) => {
     if (!timestamp) return "N/A"
-    
+
     try {
       const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp)
       return date.toLocaleDateString()
     } catch (error) {
       return "Invalid date"
     }
+  }
+
+  if (authLoading) {
+    return <div className="flex items-center justify-center min-h-screen">Loading...</div>
+  }
+
+  if (!userId || !userRole) {
+    return null // Redirected via useEffect
   }
 
   return (
@@ -112,7 +132,7 @@ export default function AdminsPage() {
         <CardHeader>
           <CardTitle>All Admin Accounts</CardTitle>
           <CardDescription>
-            Manage all admin accounts in the system. Superadmins can manage both restaurants and other admins.
+            Manage all admin accounts in the system.
           </CardDescription>
         </CardHeader>
         <CardContent>

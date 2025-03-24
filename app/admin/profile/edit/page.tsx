@@ -1,131 +1,95 @@
 "use client"
 
 import type React from "react"
-
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { auth, db } from "@/lib/firebase"
 import { doc, getDoc, updateDoc } from "firebase/firestore"
-import { updateProfile, type User } from "firebase/auth"
+import { updateProfile } from "firebase/auth"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2, ArrowLeft, Save } from "lucide-react"
 import { toast } from "sonner"
-import { Separator } from "@/components/ui/separator"
+import { useAuth } from "@/lib/auth-context"
 
 interface UserProfile {
   displayName: string
   email: string
   phoneNumber: string
-  role: string
-  joinDate: string
-
+  role: "admin" | "superadmin"
 }
 
 export default function EditProfile() {
   const router = useRouter()
+  const { userId, userRole } = useAuth()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-
-  const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile>({
     displayName: "",
     email: "",
     phoneNumber: "",
-    role: "",
-    joinDate: "",
-    
+    role: "admin",
   })
 
-  const fetchUserProfile = useCallback(
-    async (userId: string) => {
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      if (!userId) return
+
       try {
         setLoading(true)
-        const userDoc = await getDoc(doc(db, "users", userId))
+        const user = auth.currentUser
 
-        if (userDoc.exists()) {
-          const userData = userDoc.data() as Omit<UserProfile, "email" | "displayName" | "photoURL">
-
-          // Combine Firebase Auth user data with Firestore profile data
-          setProfile({
-            displayName: currentUser?.displayName || "User",
-            email: currentUser?.email || "",
-            phoneNumber: userData.phoneNumber || "",
-            role: userData.role || "Staff",
-            joinDate: userData.joinDate || new Date().toISOString().split("T")[0],
-            
-          })
-        } else {
-          // If no profile document exists yet, use basic auth data
-          setProfile({
-            displayName: currentUser?.displayName || "User",
-            email: currentUser?.email || "",
-            phoneNumber: currentUser?.phoneNumber || "",
-            role: "Staff",
-            joinDate: new Date().toISOString().split("T")[0],
-           
-          })
+        if (!user) {
+          router.push("/admin/login")
+          return
         }
+
+        const userDoc = await getDoc(doc(db, "adminUsers", userId))
+        const userData = userDoc.exists() ? userDoc.data() : {}
+
+        setProfile({
+          // Always use the current authenticated user's display name and email
+          displayName: user.displayName || userData.name || "",
+          email: user.email || "",
+          phoneNumber: userData.phoneNumber || "",
+          role: userRole || userData.role || "admin",
+        })
       } catch (error) {
         console.error("Error fetching profile:", error)
         toast.error("Failed to load profile data")
       } finally {
         setLoading(false)
       }
-    },
-    [currentUser],
-  )
+    }
 
-  useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(async (user) => {
-      if (user) {
-        setCurrentUser(user)
-        await fetchUserProfile(user.uid)
-      } else {
-        router.push("/admin/login")
-      }
-    })
+    fetchUserProfile()
+  }, [userId, userRole, router])
 
-    return () => unsubscribe()
-  }, [router, fetchUserProfile])
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
     setProfile((prev) => ({ ...prev, [name]: value }))
   }
 
-  const handleSelectChange = (name: string, value: string) => {
-    setProfile((prev) => ({ ...prev, [name]: value }))
-  }
-
-
-    
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!currentUser) return
+    if (!userId) return
 
     try {
       setSaving(true)
+      const user = auth.currentUser
+      if (user) {
+        // Update display name in Firebase Auth
+        await updateProfile(user, { displayName: profile.displayName })
 
-      // Update display name in Firebase Auth
-      await updateProfile(currentUser, {
-        displayName: profile.displayName,
-      })
-
-      // Update additional profile data in Firestore
-      await updateDoc(doc(db, "users", currentUser.uid), {
-        phoneNumber: profile.phoneNumber,
-        role: profile.role,
-     
-    
-        // Don't update joinDate as it should remain the original
-      })
-
+        // Update additional fields in Firestore
+        await updateDoc(doc(db, "adminUsers", userId), {
+          name: profile.displayName, // Also update name in Firestore
+          phoneNumber: profile.phoneNumber,
+          // Don't update role here - that should be managed by superadmin
+        })
+      }
       toast.success("Profile updated successfully")
       router.push("/admin/profile/view")
     } catch (error) {
@@ -135,8 +99,6 @@ export default function EditProfile() {
       setSaving(false)
     }
   }
-
-
 
   if (loading) {
     return (
@@ -157,78 +119,65 @@ export default function EditProfile() {
       </div>
 
       <form onSubmit={handleSubmit}>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-       
+        <Card>
+          <CardHeader>
+            <CardTitle>Personal Information</CardTitle>
+            <CardDescription>Update your profile information</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="displayName">Full Name</Label>
+              <Input
+                id="displayName"
+                name="displayName"
+                value={profile.displayName}
+                onChange={handleChange}
+                placeholder="Your full name"
+              />
+            </div>
 
-          {/* Profile Details Card */}
-          <Card className="md:col-span-2">
-            <CardHeader>
-              <CardTitle>Personal Information</CardTitle>
-              <CardDescription>Update your profile information</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="displayName">Full Name</Label>
-                <Input
-                  id="displayName"
-                  name="displayName"
-                  value={profile.displayName}
-                  onChange={handleChange}
-                  placeholder="Your full name"
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input id="email" name="email" value={profile.email} disabled className="bg-muted" />
+              <p className="text-xs text-muted-foreground">Email cannot be changed</p>
+            </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" name="email" value={profile.email} disabled className="bg-muted" />
-                <p className="text-xs text-muted-foreground">Email cannot be changed</p>
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="phoneNumber">Phone Number</Label>
+              <Input
+                id="phoneNumber"
+                name="phoneNumber"
+                value={profile.phoneNumber}
+                onChange={handleChange}
+                placeholder="Your phone number"
+              />
+            </div>
 
-              
-
-              <Separator />
-
-              <div className="space-y-2">
-                <Label htmlFor="role">Role</Label>
-                <Select value={profile.role} onValueChange={(value) => handleSelectChange("role", value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Admin">Admin</SelectItem>
-                    <SelectItem value="Manager">Manager</SelectItem>
-                    <SelectItem value="Cashier">Cashier</SelectItem>
-                    <SelectItem value="Staff">Staff</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-            </CardContent>
-            <CardFooter className="flex justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                className="mr-2"
-                onClick={() => router.push("/admin/profile/view")}
-              >
-                Cancel
-              </Button>
-              <Button className="bg-purple-600 hover:bg-purple-700" type="submit" disabled={saving}>
-                {saving ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4 mr-2" />
-                    Save Changes
-                  </>
-                )}
-              </Button>
-            </CardFooter>
-          </Card>
-        </div>
+            <div className="space-y-2">
+              <Label htmlFor="role">Role</Label>
+              <Input id="role" name="role" value={profile.role} disabled className="bg-muted" />
+              <p className="text-xs text-muted-foreground">Role is managed by Super Admin</p>
+            </div>
+          </CardContent>
+          <CardFooter className="flex justify-end">
+            <Button type="button" variant="outline" className="mr-2" onClick={() => router.push("/admin/profile/view")}>
+              Cancel
+            </Button>
+            <Button className="bg-purple-600 hover:bg-purple-700" type="submit" disabled={saving}>
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4 mr-2" />
+                  Save Changes
+                </>
+              )}
+            </Button>
+          </CardFooter>
+        </Card>
       </form>
     </div>
   )
