@@ -104,14 +104,6 @@ export default function ViewProfile() {
           </div>
 
           <div className="space-y-1">
-            <div className="text-sm font-medium text-muted-foreground">Phone Number</div>
-            <div className="flex items-center">
-              <Phone className="w-4 h-4 mr-2 text-muted-foreground" />
-              <span>{profile.phoneNumber || "Not provided"}</span>
-            </div>
-          </div>
-
-          <div className="space-y-1">
             <div className="text-sm font-medium text-muted-foreground">Role</div>
             <div>{profile.role}</div>
           </div>

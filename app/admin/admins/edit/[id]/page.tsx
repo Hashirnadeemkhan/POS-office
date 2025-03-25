@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore"
@@ -14,6 +13,16 @@ import { toast } from "sonner"
 import { ArrowLeft, Loader2 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useAuth } from "@/lib/auth-context"
+import { getFunctions, httpsCallable } from "firebase/functions"
+
+const validatePassword = (password: string) => {
+  return {
+    length: password.length >= 8,
+    uppercase: /[A-Z]/.test(password),
+    number: /[0-9]/.test(password),
+    special: /[!@#$%^&*]/.test(password),
+  }
+}
 
 export default function EditAdminPage({ params }: { params: { id: string } }) {
   const [formData, setFormData] = useState({
@@ -22,14 +31,20 @@ export default function EditAdminPage({ params }: { params: { id: string } }) {
     role: "admin",
   })
   const [password, setPassword] = useState("")
+  const [passwordValidation, setPasswordValidation] = useState({
+    length: false,
+    uppercase: false,
+    number: false,
+    special: false,
+  })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
   const { id } = params
   const { userRole } = useAuth()
+  const functions = getFunctions()
 
   useEffect(() => {
-    // Check if current user is superadmin
     if (userRole !== "superadmin") {
       toast.error("Only Super Admins can edit admin accounts")
       router.push("/admin/dashboard")
@@ -69,12 +84,28 @@ export default function EditAdminPage({ params }: { params: { id: string } }) {
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
 
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    setPassword(value)
+    setPasswordValidation(validatePassword(value))
+  }
+
   const handleRoleChange = (value: string) => {
     setFormData((prev) => ({ ...prev, role: value }))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (password) {
+      const validation = validatePassword(password)
+      const isPasswordValid = Object.values(validation).every(Boolean)
+      if (!isPasswordValid) {
+        toast.error("Password must meet all requirements")
+        return
+      }
+    }
+
     setIsSubmitting(true)
 
     try {
@@ -82,46 +113,27 @@ export default function EditAdminPage({ params }: { params: { id: string } }) {
       const originalDoc = await getDoc(docRef)
       const originalData = originalDoc.data()
 
-      // Prepare update data for Firestore
       const updateData: any = {
         name: formData.name,
         role: formData.role,
         lastUpdated: serverTimestamp(),
       }
 
-      // Handle email update
       if (formData.email !== originalData?.email) {
-        // For superadmins, we can update email without requiring current password
-        try {
-          // This would typically require Firebase Admin SDK in a server action
-          // For this example, we'll just update the email in Firestore
-          updateData.email = formData.email
-        } catch (error) {
-          console.error("Error updating email:", error)
-          toast.error("Failed to update email")
-          setIsSubmitting(false)
-          return
-        }
+        updateData.email = formData.email
+        // Note: Email updates would also need Admin SDK in production
       }
 
-      // Handle password update
       if (password) {
-        // For superadmins, we can update password without requiring current password
-        try {
-          // This would typically require Firebase Admin SDK in a server action
-          // For this example, we'll just note that the password would be updated
-          console.log("Password would be updated")
-        } catch (error) {
-          console.error("Error updating password:", error)
-          toast.error("Failed to update password")
-          setIsSubmitting(false)
-          return
-        }
+        const updateAdminPassword = httpsCallable(functions, "updateAdminPassword")
+        await updateAdminPassword({
+          adminId: id,
+          newPassword: password,
+        })
+        toast.success("Password updated successfully - old password will no longer work")
       }
 
-      // Update Firestore document
       await updateDoc(docRef, updateData)
-
       toast.success("Admin account updated successfully")
       router.push("/admin/admins")
     } catch (error: any) {
@@ -140,6 +152,8 @@ export default function EditAdminPage({ params }: { params: { id: string } }) {
     )
   }
 
+  const isPasswordValid = password ? Object.values(passwordValidation).every(Boolean) : true
+
   return (
     <div className="container py-10">
       <Button variant="ghost" className="mb-6" onClick={() => router.push("/admin/admins")}>
@@ -151,8 +165,7 @@ export default function EditAdminPage({ params }: { params: { id: string } }) {
         <CardHeader>
           <CardTitle>Edit Admin Account</CardTitle>
           <CardDescription>
-            Update admin account details. As a Super Admin, you can modify all fields without requiring the current
-            password.
+            Update admin account details. New password will replace the existing one if provided.
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
@@ -166,6 +179,7 @@ export default function EditAdminPage({ params }: { params: { id: string } }) {
                 onChange={handleChange}
                 placeholder="Enter admin's full name"
                 required
+                disabled={isSubmitting}
               />
             </div>
 
@@ -179,6 +193,7 @@ export default function EditAdminPage({ params }: { params: { id: string } }) {
                 onChange={handleChange}
                 placeholder="Enter email address"
                 required
+                disabled={isSubmitting}
               />
             </div>
 
@@ -188,18 +203,36 @@ export default function EditAdminPage({ params }: { params: { id: string } }) {
                 id="password"
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={handlePasswordChange}
                 placeholder="Enter new password"
-                minLength={6}
+                disabled={isSubmitting}
               />
-              <p className="text-xs text-muted-foreground">
-                Leave blank to keep current password. Minimum 6 characters.
-              </p>
+              {password && (
+                <div className="text-xs text-muted-foreground space-y-1">
+                  <p className={passwordValidation.length ? "text-green-600" : "text-red-600"}>
+                    ✓ At least 8 characters
+                  </p>
+                  <p className={passwordValidation.uppercase ? "text-green-600" : "text-red-600"}>
+                    ✓ One uppercase letter
+                  </p>
+                  <p className={passwordValidation.number ? "text-green-600" : "text-red-600"}>
+                    ✓ One number
+                  </p>
+                  <p className={passwordValidation.special ? "text-green-600" : "text-red-600"}>
+                    ✓ One special character (!@#$%^&*)
+                  </p>
+                </div>
+              )}
+              {!password && (
+                <p className="text-xs text-muted-foreground">
+                  Leave blank to keep current password. If set, must include 8+ characters, uppercase, number, and special character.
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="role">Role</Label>
-              <Select value={formData.role} onValueChange={handleRoleChange}>
+              <Select value={formData.role} onValueChange={handleRoleChange} disabled={isSubmitting}>
                 <SelectTrigger id="role">
                   <SelectValue placeholder="Select role" />
                 </SelectTrigger>
@@ -208,13 +241,14 @@ export default function EditAdminPage({ params }: { params: { id: string } }) {
                   <SelectItem value="superadmin">Super Admin</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                Super Admins can manage both restaurants and other admins. Regular Admins can only manage restaurants.
-              </p>
             </div>
           </CardContent>
           <CardFooter>
-            <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700" disabled={isSubmitting}>
+            <Button 
+              type="submit" 
+              className="w-full bg-purple-600 hover:bg-purple-700" 
+              disabled={isSubmitting || !isPasswordValid}
+            >
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -230,4 +264,3 @@ export default function EditAdminPage({ params }: { params: { id: string } }) {
     </div>
   )
 }
-

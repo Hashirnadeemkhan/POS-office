@@ -1,12 +1,11 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { collection, addDoc, serverTimestamp } from "firebase/firestore"
+import { doc, setDoc, serverTimestamp } from "firebase/firestore" // Replace addDoc with setDoc
 import { createUserWithEmailAndPassword } from "firebase/auth"
-import { db, auth } from "@/lib/firebase"
+import { db, secondaryAuth } from "@/lib/firebase" // Use secondaryAuth
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -15,11 +14,25 @@ import { toast } from "sonner"
 import { ArrowLeft, Loader2, Calendar } from "lucide-react"
 import { generateActivationToken } from "@/lib/utils"
 
-export default function CreateRestaurantPage() {
-  // Get today's date in YYYY-MM-DD format for default values
-  const today = new Date().toISOString().split("T")[0]
+// Add password validation function at the top of the file, after the imports
+const validatePassword = (password: string): { isValid: boolean; message: string } => {
+  if (password.length < 8) {
+    return { isValid: false, message: "Password must be at least 8 characters long." }
+  }
+  if (!/[A-Z]/.test(password)) {
+    return { isValid: false, message: "Password must contain at least one uppercase letter." }
+  }
+  if (!/[0-9]/.test(password)) {
+    return { isValid: false, message: "Password must contain at least one number." }
+  }
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    return { isValid: false, message: "Password must contain at least one special character." }
+  }
+  return { isValid: true, message: "" }
+}
 
-  // Calculate default expiry date (30 days from today)
+export default function CreateRestaurantPage() {
+  const today = new Date().toISOString().split("T")[0]
   const defaultExpiryDate = new Date()
   defaultExpiryDate.setDate(defaultExpiryDate.getDate() + 30)
   const defaultExpiryDateString = defaultExpiryDate.toISOString().split("T")[0]
@@ -44,19 +57,24 @@ export default function CreateRestaurantPage() {
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
 
+  // Modify the handleSubmit function to validate password before submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Validate password
+    const validation = validatePassword(formData.password)
+    if (!validation.isValid) {
+      toast.error(validation.message)
+      return
+    }
+
     setIsSubmitting(true)
 
     try {
-      // Generate a unique activation token or use the provided one
       const activationToken = formData.activationToken.trim() || generateActivationToken()
-
-      // Parse dates
       const activationDate = new Date(formData.activationDate)
       let expiryDate = new Date(formData.expiryDate)
 
-      // Security check: ensure activation date is not in the past
       const today = new Date()
       today.setHours(0, 0, 0, 0)
 
@@ -65,14 +83,12 @@ export default function CreateRestaurantPage() {
         activationDate.setTime(today.getTime())
       }
 
-      // Security check: ensure expiry date is after activation date
       if (expiryDate <= activationDate) {
         toast.warning("Expiry date must be after activation date. Setting to 30 days after activation.")
         expiryDate = new Date(activationDate)
         expiryDate.setDate(activationDate.getDate() + 30)
       }
 
-      // Security check: limit to maximum 365 days from activation date
       const maxExpiryDate = new Date(activationDate)
       maxExpiryDate.setDate(activationDate.getDate() + 365)
 
@@ -81,17 +97,18 @@ export default function CreateRestaurantPage() {
         expiryDate = maxExpiryDate
       }
 
-      // Create the user in Firebase Authentication
-      const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password)
+      // Create the user with secondaryAuth
+      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, formData.email, formData.password)
+      const user = userCredential.user
 
-      // Store additional restaurant data in Firestore
-      await addDoc(collection(db, "restaurants"), {
+      // Use setDoc to store the restaurant data with the UID as the document ID
+      await setDoc(doc(db, "restaurants", user.uid), {
         name: formData.name,
         email: formData.email,
         ownerName: formData.ownerName,
         activationToken,
         isActive: true,
-        uid: userCredential.user.uid,
+        uid: user.uid,
         createdAt: serverTimestamp(),
         lastUpdated: serverTimestamp(),
         tokenCreatedAt: new Date().toISOString(),
@@ -99,7 +116,9 @@ export default function CreateRestaurantPage() {
         tokenExpiresAt: expiryDate.toISOString(),
       })
 
-      // Set the token and dates for display
+      // Sign out from secondaryAuth to clean up
+      await secondaryAuth.signOut()
+
       setCreatedToken(activationToken)
       setTokenActivation(activationDate.toLocaleDateString())
       setTokenExpiration(expiryDate.toLocaleDateString())
@@ -107,11 +126,10 @@ export default function CreateRestaurantPage() {
       toast.success("Restaurant account created successfully")
     } catch (error: any) {
       console.error("Error creating restaurant:", error)
-
       if (error.code === "auth/email-already-in-use") {
         toast.error("Email is already in use. Please use a different email.")
       } else {
-        toast.error("Failed to create restaurant account")
+        toast.error("Failed to create restaurant account: " + error.message)
       }
     } finally {
       setIsSubmitting(false)
@@ -212,6 +230,7 @@ export default function CreateRestaurantPage() {
                 />
               </div>
 
+              {/* Update the password help text */}
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <Input
@@ -222,12 +241,13 @@ export default function CreateRestaurantPage() {
                   onChange={handleChange}
                   placeholder="Enter password"
                   required
-                  minLength={6}
+                  minLength={8}
                 />
-                <p className="text-xs text-muted-foreground">Password must be at least 6 characters long.</p>
+                <p className="text-xs text-muted-foreground">
+                  Password must be at least 8 characters with one uppercase letter, one number, and one special
+                  character.
+                </p>
               </div>
-
-          
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">

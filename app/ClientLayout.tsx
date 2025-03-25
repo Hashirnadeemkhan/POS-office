@@ -7,20 +7,25 @@ import Sidebar from "@/src/components/Sidebar"
 import { useAuth } from "@/lib/auth-context"
 import { Loader2 } from "lucide-react"
 
+// ClientLayout.tsx
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, loading } = useAuth()
+  const { isAuthenticated, loading, userRole } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
 
   useEffect(() => {
     if (!loading) {
-      if (!isAuthenticated && pathname !== "/admin/login") {
+      const isRestaurantUser = isAuthenticated && !userRole // Restaurant user has no admin role
+      
+      if (!isAuthenticated && !pathname.startsWith("/admin/login") && !pathname.startsWith("/pos/login")) {
         router.push("/admin/login")
-      } else if (isAuthenticated && pathname === "/admin/login") {
-        router.push("/admin/dashboard")
+      } else if (isAuthenticated) {
+        if (pathname === "/admin/login" || pathname === "/pos/login") {
+          router.push(isRestaurantUser ? "/pos/dashboard" : "/admin/dashboard")
+        }
       }
     }
-  }, [isAuthenticated, loading, pathname, router])
+  }, [isAuthenticated, loading, pathname, router, userRole])
 
   if (loading) {
     return (
@@ -30,7 +35,9 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     )
   }
 
-  const shouldShowSidebar = isAuthenticated && pathname !== "/admin/login"
+  const shouldShowSidebar = isAuthenticated && 
+                           pathname !== "/admin/login" && 
+                           pathname !== "/pos/login"
 
   return (
     <div className="flex h-screen">

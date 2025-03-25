@@ -1,9 +1,10 @@
 "use client";
-
+import React from "react"
 import { useState, useEffect } from "react";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Pencil, Trash2 } from "lucide-react";
+
+import { PlusCircle, Pencil, Trash2 } from 'lucide-react';
 import { AddCategoryModal } from "@/src/components/AddCategoryModal";
 import { EditCategoryModal } from "@/src/components/Edit-category-dailog";
 import { DeleteCategoryDialog } from "@/src/components/Delete-category-dialog";
@@ -163,9 +164,9 @@ export default function CategoryPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              categories.map((category) => (
+              categories.map((category, index) => (
                 <TableRow key={category.id}>
-                  <TableCell className="font-medium">{category.id}</TableCell>
+                  <TableCell className="font-medium">{index + 1}</TableCell>
                   <TableCell>{category.name}</TableCell>
                   <TableCell>{category.description}</TableCell>
                   <TableCell className="text-right">

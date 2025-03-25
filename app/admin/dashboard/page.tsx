@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { collection, query, orderBy, onSnapshot } from "firebase/firestore"
+import { collection, query, orderBy, onSnapshot, doc, getDoc } from "firebase/firestore"
 import { auth, db } from "@/lib/firebase"
 import RestaurantsTable from "@/src/components/RestaurantsTable"
 import { Building2, Users, UserMinus } from "lucide-react"
@@ -17,55 +17,68 @@ export default function Dashboard() {
   const [userName, setUserName] = useState("Admin") // Default value
 
   useEffect(() => {
-    // Listen for authentication state changes
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        // If user is logged in, set their email or display name
-        const displayName = user.displayName || user.email || "Admin"
-        setUserName(displayName)
-        localStorage.setItem("userName", displayName) // Optional: Store in localStorage
-      } else {
-        // If no user is logged in, fallback to "Admin"
-        setUserName("Admin")
-        localStorage.removeItem("userName")
-      }
-    })
-
-    // Set up real-time listener for restaurant stats
-    const restaurantsRef = collection(db, "restaurants")
-    const q = query(restaurantsRef, orderBy("createdAt", "desc"))
-
-    const unsubscribeSnapshot = onSnapshot(q, (querySnapshot) => {
-      let totalCount = 0
-      let activeCount = 0
-      let deactiveCount = 0
-
-      querySnapshot.forEach((doc) => {
-        totalCount++
-        if (doc.data().isActive) {
-          activeCount++
+        const adminRef = doc(db, "adminUsers", user.uid);
+        const restaurantRef = doc(db, "restaurants", user.uid);
+  
+        const adminSnap = await getDoc(adminRef);
+        if (adminSnap.exists()) {
+          const adminData = adminSnap.data();
+          const name = adminData.name || "Admin";
+          setUserName(name);
+          localStorage.setItem("userName", name); // Use name directly
         } else {
-          deactiveCount++
+          const restaurantSnap = await getDoc(restaurantRef);
+          if (restaurantSnap.exists()) {
+            const restaurantData = restaurantSnap.data();
+            const name = restaurantData.name || restaurantData.ownerName || "Restaurant User";
+            setUserName(name);
+            localStorage.setItem("userName", name); // Use name directly
+          } else {
+            setUserName("Unknown User");
+            localStorage.setItem("userName", "Unknown User"); // Use value directly
+          }
         }
-      })
-
+      } else {
+        setUserName("Admin");
+        localStorage.removeItem("userName");
+      }
+    });
+  
+    const restaurantsRef = collection(db, "restaurants");
+    const q = query(restaurantsRef, orderBy("createdAt", "desc"));
+  
+    const unsubscribeSnapshot = onSnapshot(q, (querySnapshot) => {
+      let totalCount = 0;
+      let activeCount = 0;
+      let deactiveCount = 0;
+  
+      querySnapshot.forEach((doc) => {
+        totalCount++;
+        if (doc.data().isActive) {
+          activeCount++;
+        } else {
+          deactiveCount++;
+        }
+      });
+  
       setStats({
         total: totalCount,
         active: activeCount,
         deactive: deactiveCount,
         loading: false,
-      })
+      });
     }, (error) => {
-      console.error("Error fetching restaurant stats in real-time:", error)
-      setStats((prev) => ({ ...prev, loading: false }))
-    })
-
-    // Cleanup listeners when the component unmounts
+      console.error("Error fetching restaurant stats in real-time:", error);
+      setStats((prev) => ({ ...prev, loading: false }));
+    });
+  
     return () => {
-      unsubscribeAuth()
-      unsubscribeSnapshot()
-    }
-  }, [])
+      unsubscribeAuth();
+      unsubscribeSnapshot();
+    };
+  }, []); // No need to add userName
 
   // Calculate percentages for progress bars
   const activePercentage = stats.total > 0 ? (stats.active / stats.total) * 100 : 0

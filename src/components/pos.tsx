@@ -659,15 +659,15 @@ export default function POS() {
             <div className="mt-4 border-t pt-4">
               <div className="flex justify-between mb-2">
                 <p className="text-gray-600">Subtotal</p>
-                <p className="font-medium">Rp {totalAmount.toLocaleString()}</p>
+                <p className="font-medium">Rs {totalAmount.toLocaleString()}</p>
               </div>
               <div className="flex justify-between mb-2">
                 <p className="text-gray-600">Tax (10%)</p>
-                <p className="font-medium">Rp {(totalAmount * 0.1).toLocaleString()}</p>
+                <p className="font-medium">Rs {(totalAmount * 0.1).toLocaleString()}</p>
               </div>
               <div className="flex justify-between mb-4">
                 <p className="font-bold">Total</p>
-                <p className="font-bold text-lg">Rp {(totalAmount * 1.1).toLocaleString()}</p>
+                <p className="font-bold text-lg">Rs {(totalAmount * 1.1).toLocaleString()}</p>
               </div>
 
               <Button
