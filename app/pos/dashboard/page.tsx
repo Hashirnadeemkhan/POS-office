@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { getAuth, onAuthStateChanged } from "firebase/auth"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -38,56 +39,68 @@ export default function PosDashboard() {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // Fetch products
-        const productsQuery = query(collection(db, "products"))
-        const productsSnapshot = await getDocs(productsQuery)
-        const productsData = productsSnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as Product[]
-        setProducts(productsData)
+    const auth = getAuth()
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        // User is signed in, fetch data
+        const fetchData = async () => {
+          try {
+            // Fetch products
+            const productsQuery = query(collection(db, "products"))
+            const productsSnapshot = await getDocs(productsQuery)
+            const productsData = productsSnapshot.docs.map((doc) => ({
+              id: doc.id,
+              ...doc.data(),
+              createdAt: doc.data().createdAt?.toDate(), // Convert to Date object
+            })) as Product[]
+            setProducts(productsData)
 
-        // Fetch recent products
-        const recentProductsQuery = query(collection(db, "products"), orderBy("createdAt", "desc"), limit(10))
-        const recentProductsSnapshot = await getDocs(recentProductsQuery)
-        const recentProductsData = recentProductsSnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as Product[]
-        setRecentProducts(recentProductsData)
+            // Fetch recent products
+            const recentProductsQuery = query(collection(db, "products"), orderBy("createdAt", "desc"), limit(10))
+            const recentProductsSnapshot = await getDocs(recentProductsQuery)
+            const recentProductsData = recentProductsSnapshot.docs.map((doc) => ({
+              id: doc.id,
+              ...doc.data(),
+              createdAt: doc.data().createdAt?.toDate(), // Convert to Date object
+            })) as Product[]
+            setRecentProducts(recentProductsData)
 
-        // Fetch categories
-        const categoriesQuery = query(collection(db, "categories"))
-        const categoriesSnapshot = await getDocs(categoriesQuery)
-        setCategoryCount(categoriesSnapshot.size)
+            // Fetch categories
+            const categoriesQuery = query(collection(db, "categories"))
+            const categoriesSnapshot = await getDocs(categoriesQuery)
+            setCategoryCount(categoriesSnapshot.size)
 
-        // Fetch license information
-        const licenseQuery = query(collection(db, "license"))
-        const licenseSnapshot = await getDocs(licenseQuery)
-        const licenseData = licenseSnapshot.docs.map((doc) => doc.data())[0]
+            // Fetch license information
+            const licenseQuery = query(collection(db, "license"))
+            const licenseSnapshot = await getDocs(licenseQuery)
+            const licenseData = licenseSnapshot.docs.map((doc) => doc.data())[0]
 
-        const activationDate = licenseData?.activationDate.toDate() || new Date()
-        const expiryDate = new Date(activationDate.getTime())
-        expiryDate.setFullYear(expiryDate.getFullYear() + 1)
+            const activationDate = licenseData?.activationDate.toDate() || new Date()
+            const expiryDate = new Date(activationDate.getTime())
+            expiryDate.setFullYear(expiryDate.getFullYear() + 1)
 
-        const remainingDays = Math.ceil((expiryDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+            const remainingDays = Math.ceil((expiryDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
 
-        setLicenseInfo({
-          activationDate,
-          expiryDate,
-          remainingDays,
-        })
+            setLicenseInfo({
+              activationDate,
+              expiryDate,
+              remainingDays,
+            })
 
-        setIsLoading(false)
-      } catch (error) {
-        console.error("Error fetching dashboard data:", error)
+            setIsLoading(false)
+          } catch (error) {
+            console.error("Error fetching dashboard data:", error)
+            setIsLoading(false)
+          }
+        }
+
+        fetchData()
+      } else {
+        // User is signed out
+        console.log("User is not authenticated")
         setIsLoading(false)
       }
-    }
-
-    fetchData()
+    })
   }, [])
 
   const formatDate = (date: Date) => {
