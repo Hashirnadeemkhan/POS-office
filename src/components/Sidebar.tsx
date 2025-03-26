@@ -134,11 +134,11 @@ export default function Sidebar() {
 
   const renderPosSidebar = () => (
     <nav className="px-3 py-2 space-y-1">
+      <SidebarLink href="/pos/dashboard" icon={LayoutDashboard} label="Dashboard" />
       <SidebarLink href="/pos" icon={Home} label="POS" />
       <SidebarLink href="/pos/category" icon={List} label="Categories" />
       <SidebarLink href="/pos/subcategory" icon={List} label="Subcategories" />
       <SidebarLink href="/pos/products" icon={Package} label="Products" />
-      <SidebarLink href="/pos/dashboard" icon={LayoutDashboard} label="Dashboard" />
       <div className="pt-6 mt-6 border-t border-gray-200">
         <SidebarLink
           href="#"

@@ -2,8 +2,8 @@
 
 import React, { useState, FormEvent } from "react"
 import { Eye, EyeOff } from "lucide-react"
-import { signInWithEmailAndPassword } from "firebase/auth"
-import { doc, setDoc, getDoc } from "firebase/firestore"
+import { signInWithEmailAndPassword, signOut } from "firebase/auth"
+import { doc, setDoc, getDoc, deleteDoc } from "firebase/firestore"
 import { secondaryAuth, db } from "@/lib/firebase"
 import { useRouter } from "next/navigation"
 import { v4 as uuidv4 } from "uuid"
@@ -16,25 +16,31 @@ export default function PosLoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const router = useRouter()
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, logout } = useAuth()
 
   // Redirect if already authenticated
   React.useEffect(() => {
     if (isAuthenticated) {
       router.push("/pos/dashboard")
     }
-  }, [isAuthenticated, router])
+
+    // Cleanup on unmount or page leave
+    return () => {
+      if (isAuthenticated) {
+        logout() // Trigger logout when component unmounts
+      }
+    }
+  }, [isAuthenticated, router, logout])
 
   const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError(null)
     setIsLoading(true)
-  
+
     try {
       const userCredential = await signInWithEmailAndPassword(secondaryAuth, email, password)
       const user = userCredential.user
 
-      // Fetch restaurant data to verify status
       const restaurantDoc = await getDoc(doc(db, "restaurants", user.uid))
       if (!restaurantDoc.exists()) {
         throw new Error("Restaurant account not found.")
@@ -45,7 +51,6 @@ export default function PosLoginPage() {
       const tokenExpiresAt = new Date(restaurantData.tokenExpiresAt)
       const currentDate = new Date()
 
-      // Check if the account is active and within the token validity period
       if (!restaurantData.isActive) {
         throw new Error("This account is currently inactive.")
       }
@@ -56,7 +61,6 @@ export default function PosLoginPage() {
         throw new Error("This account has expired. Expiry date: " + tokenExpiresAt.toLocaleDateString())
       }
 
-      // Create a session for the restaurant user
       const sessionToken = uuidv4()
       await setDoc(doc(db, "restaurantSessions", user.uid), {
         sessionToken,
@@ -64,22 +68,17 @@ export default function PosLoginPage() {
         createdAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       })
-      // Store session token in localStorage (optional, since AuthContext will handle state)
       localStorage.setItem("restaurantSessionToken", sessionToken)
       console.log("Restaurant logged in successfully")
-      router.push("/pos/dashboard") // Already correct, just confirming
+      router.push("/pos/dashboard")
     } catch (err: any) {
-      // Existing error handling...
+      console.error("Login error:", err)
+      setError(err.message || "An error occurred during login.")
     } finally {
       setIsLoading(false)
     }
   }
-  // Update the useEffect to redirect properly
-React.useEffect(() => {
-  if (isAuthenticated) {
-    router.push("/pos/dashboard") // Already correct
-  }
-}, [isAuthenticated, router])
+
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-md bg-white rounded-lg shadow-lg p-8 mx-4">

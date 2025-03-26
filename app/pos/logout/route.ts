@@ -1,31 +1,38 @@
-import { NextResponse } from "next/server"
-import { db } from "@/lib/firebase"
-import { doc, deleteDoc } from "firebase/firestore"
-import { adminDb } from "@/lib/firebase-admin" // Import Firebase Admin SDK
+import { NextResponse } from "next/server";
+import { db } from "@/lib/firebase";
+import { doc, deleteDoc, getDoc } from "firebase/firestore";
+import { adminDb } from "@/lib/firebase-admin";
 
 export async function POST(request: Request) {
   try {
-    // Get session token from request headers or cookies
-    const sessionToken = request.headers.get("x-session-token") || ""
+    const sessionToken = request.headers.get("x-session-token") || "";
 
-    // Verify session token using Firebase Admin SDK (optional but recommended)
-    const sessionDoc = await adminDb
+    // Fetch session document using Firebase Admin SDK
+    const sessionQuery = await adminDb
       .collection("restaurantSessions")
       .where("sessionToken", "==", sessionToken)
-      .get()
+      .get();
 
-    if (sessionDoc.empty) {
-      return NextResponse.json({ message: "Invalid or no session found" }, { status: 401 })
+    if (sessionQuery.empty) {
+      return NextResponse.json({ message: "Invalid or no session found" }, { status: 401 });
     }
 
-    const userId = sessionDoc.docs[0].id
+    const sessionDoc = sessionQuery.docs[0];
+    const sessionData = sessionDoc.data();
+    const userId = sessionDoc.id;
 
-    // Delete the session from Firestore
-    await deleteDoc(doc(db, "restaurantSessions", userId))
+    // Check if session has expired
+    const currentTime = new Date().getTime();
+    if (sessionData.expiresAt && currentTime > sessionData.expiresAt) {
+      await deleteDoc(doc(db, "restaurantSessions", userId));
+      return NextResponse.json({ message: "Session expired, logged out" }, { status: 401 });
+    }
 
-    return NextResponse.json({ message: "Logout successful" }, { status: 200 })
+    // Manually delete the session (logout)
+    await deleteDoc(doc(db, "restaurantSessions", userId));
+    return NextResponse.json({ message: "Logout successful" }, { status: 200 });
   } catch (error: any) {
-    console.error("POS Logout error:", error)
-    return NextResponse.json({ message: error.message || "Failed to logout" }, { status: 500 })
+    console.error("POS Logout error:", error);
+    return NextResponse.json({ message: error.message || "Failed to logout" }, { status: 500 });
   }
 }

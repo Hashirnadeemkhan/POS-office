@@ -63,8 +63,12 @@ export default function PosDashboard() {
         const categoriesSnapshot = await getDocs(categoriesQuery)
         setCategoryCount(categoriesSnapshot.size)
 
-        // Mock license data (in a real app, this would come from your backend)
-        const activationDate = new Date(new Date().setMonth(new Date().getMonth() - 2))
+        // Fetch license information
+        const licenseQuery = query(collection(db, "license"))
+        const licenseSnapshot = await getDocs(licenseQuery)
+        const licenseData = licenseSnapshot.docs.map((doc) => doc.data())[0]
+
+        const activationDate = licenseData?.activationDate.toDate() || new Date()
         const expiryDate = new Date(activationDate.getTime())
         expiryDate.setFullYear(expiryDate.getFullYear() + 1)
 
@@ -161,9 +165,6 @@ export default function PosDashboard() {
           </Card>
         </div>
 
-       
-
-      
         {/* License Information */}
         <Card>
           <CardHeader>
@@ -201,7 +202,8 @@ export default function PosDashboard() {
             </div>
           </CardContent>
         </Card>
- {/* Recent Products Table */}
+
+        {/* Recent Products Table */}
         <Card>
           <CardHeader>
             <CardTitle>Recent Products</CardTitle>
@@ -267,4 +269,3 @@ export default function PosDashboard() {
     </div>
   )
 }
-
