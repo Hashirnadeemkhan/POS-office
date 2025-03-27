@@ -80,7 +80,7 @@ export default function PosLoginPage() {
   }
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-gray-50">
+    <div className="fixed i-nset-0 flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-md bg-white rounded-lg shadow-lg p-8 mx-4">
         <h2 className="text-2xl font-semibold text-gray-800 text-center mb-8">POS Login</h2>
 

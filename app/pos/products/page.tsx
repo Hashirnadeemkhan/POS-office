@@ -276,7 +276,7 @@ export default function ProductsPage() {
       <div className="flex-1 p-6">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold">Products</h1>
-          <Button onClick={() => router.push("/products/add")}>
+          <Button onClick={() => router.push("/pos/products/add")}>
             <PlusCircle className="h-4 w-4 mr-2" /> Add Product
           </Button>
         </div>
@@ -405,7 +405,7 @@ export default function ProductsPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => router.push(`/products/edit/${product.id}`)}
+                              onClick={() => router.push(`/pos/products/edit/${product.id}`)}
                             >
                               <Pencil className="h-4 w-4" />
                             </Button>

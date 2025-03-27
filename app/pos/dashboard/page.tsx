@@ -1,122 +1,148 @@
-"use client"
+// PosDashboard.tsx
+"use client";
 
-import { useEffect, useState } from "react"
-import { getAuth, onAuthStateChanged } from "firebase/auth"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
-import { CalendarDays, Package, ShoppingBag, Tag } from "lucide-react"
-import { collection, query, getDocs, orderBy, limit } from "firebase/firestore"
-import { db } from "@/lib/firebase"
-import Image from "next/image"
+import { useEffect, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { CalendarDays, Package, ShoppingBag, Tag } from "lucide-react";
+import { collection, query, getDocs, orderBy, limit } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { useAuth } from "@/lib/auth-context";
+import Image from "next/image";
+import { Button } from "@/components/ui/button";
+import Link from "next/link"; // Add this import
 
 interface Product {
-  id: string
-  name: string
-  sku: string
-  base_price?: number
-  status?: "active" | "inactive"
-  category?: string
-  main_image_url?: string
-  createdAt?: Date
+  id: string;
+  name: string;
+  sku: string;
+  base_price?: number;
+  status?: "active" | "inactive";
+  category?: string;
+  main_image_url?: string;
+  created_at?: Date;
 }
 
 interface LicenseInfo {
-  activationDate: Date
-  expiryDate: Date
-  remainingDays: number
+  activationDate: Date;
+  expiryDate: Date;
+  remainingDays: number;
 }
 
 export default function PosDashboard() {
-  const [products, setProducts] = useState<Product[]>([])
-  const [recentProducts, setRecentProducts] = useState<Product[]>([])
-  const [categoryCount, setCategoryCount] = useState(0)
+  const { isAuthenticated, user, loading: authLoading } = useAuth();
+  const [products, setProducts] = useState<Product[]>([]);
+  const [recentProducts, setRecentProducts] = useState<Product[]>([]);
+  const [categoryCount, setCategoryCount] = useState(0);
   const [licenseInfo, setLicenseInfo] = useState<LicenseInfo>({
     activationDate: new Date(),
     expiryDate: new Date(new Date().setMonth(new Date().getMonth() + 12)),
     remainingDays: 365,
-  })
-  const [isLoading, setIsLoading] = useState(true)
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const auth = getAuth()
-    onAuthStateChanged(auth, (user) => {
-      if (user) {
-        // User is signed in, fetch data
-        const fetchData = async () => {
-          try {
-            // Fetch products
-            const productsQuery = query(collection(db, "products"))
-            const productsSnapshot = await getDocs(productsQuery)
-            const productsData = productsSnapshot.docs.map((doc) => ({
-              id: doc.id,
-              ...doc.data(),
-              createdAt: doc.data().createdAt?.toDate(), // Convert to Date object
-            })) as Product[]
-            setProducts(productsData)
+    if (authLoading) return; // Wait for auth to finish loading
 
-            // Fetch recent products
-            const recentProductsQuery = query(collection(db, "products"), orderBy("createdAt", "desc"), limit(10))
-            const recentProductsSnapshot = await getDocs(recentProductsQuery)
-            const recentProductsData = recentProductsSnapshot.docs.map((doc) => ({
-              id: doc.id,
-              ...doc.data(),
-              createdAt: doc.data().createdAt?.toDate(), // Convert to Date object
-            })) as Product[]
-            setRecentProducts(recentProductsData)
+    console.log("Authenticated user:", user); // Debug
+    if (isAuthenticated && user) {
+      fetchData();
+    } else {
+      console.log("No user authenticated for POS Dashboard");
+      setError("Please log in to view the dashboard.");
+      setIsLoading(false);
+    }
+  }, [isAuthenticated, user, authLoading]);
 
-            // Fetch categories
-            const categoriesQuery = query(collection(db, "categories"))
-            const categoriesSnapshot = await getDocs(categoriesQuery)
-            setCategoryCount(categoriesSnapshot.size)
+  const fetchData = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
 
-            // Fetch license information
-            const licenseQuery = query(collection(db, "license"))
-            const licenseSnapshot = await getDocs(licenseQuery)
-            const licenseData = licenseSnapshot.docs.map((doc) => doc.data())[0]
+      // Fetch total products
+      const productsQuery = query(collection(db, "products"));
+      const productsSnapshot = await getDocs(productsQuery);
+      console.log("Products fetched:", productsSnapshot.docs.length);
+      const productsData = productsSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        created_at: doc.data().created_at?.toDate(),
+      })) as Product[];
+      setProducts(productsData);
 
-            const activationDate = licenseData?.activationDate.toDate() || new Date()
-            const expiryDate = new Date(activationDate.getTime())
-            expiryDate.setFullYear(expiryDate.getFullYear() + 1)
+      // Fetch top 10 recent products
+      const recentQuery = query(collection(db, "products"), orderBy("created_at", "desc"), limit(10));
+      const recentSnapshot = await getDocs(recentQuery);
+      console.log("Recent products fetched:", recentSnapshot.docs.length);
+      const recentData = recentSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        name: doc.data().name || "Unnamed Product",
+        sku: doc.data().sku || "N/A",
+        base_price: doc.data().base_price ?? 0,
+        status: doc.data().status || "inactive",
+        category: doc.data().category || "Uncategorized",
+        main_image_url: doc.data().main_image_url || "",
+        created_at: doc.data().created_at?.toDate() || new Date(),
+      })) as Product[];
+      setRecentProducts(recentData);
 
-            const remainingDays = Math.ceil((expiryDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+      // Fetch categories
+      const categoriesQuery = query(collection(db, "categories"));
+      const categoriesSnapshot = await getDocs(categoriesQuery);
+      console.log("Categories fetched:", categoriesSnapshot.size);
+      setCategoryCount(categoriesSnapshot.size);
 
-            setLicenseInfo({
-              activationDate,
-              expiryDate,
-              remainingDays,
-            })
+      // Fetch license info with fallback
+      const licenseQuery = query(collection(db, "license"));
+      const licenseSnapshot = await getDocs(licenseQuery);
+      console.log("License docs fetched:", licenseSnapshot.docs.length);
+      let activationDate = new Date();
+      let expiryDate = new Date();
+      expiryDate.setFullYear(expiryDate.getFullYear() + 1);
 
-            setIsLoading(false)
-          } catch (error) {
-            console.error("Error fetching dashboard data:", error)
-            setIsLoading(false)
-          }
-        }
-
-        fetchData()
-      } else {
-        // User is signed out
-        console.log("User is not authenticated")
-        setIsLoading(false)
+      if (!licenseSnapshot.empty) {
+        const licenseData = licenseSnapshot.docs[0].data();
+        activationDate = licenseData.activationDate?.toDate() || new Date();
+        expiryDate = licenseData.expiryDate?.toDate() || new Date(activationDate.setFullYear(activationDate.getFullYear() + 1));
       }
-    })
-  }, [])
+
+      const remainingDays = Math.max(0, Math.ceil(
+        (expiryDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+      ));
+
+      setLicenseInfo({
+        activationDate,
+        expiryDate,
+        remainingDays,
+      });
+    } catch (error) {
+      console.error("Error fetching dashboard data:", error);
+      setError("Failed to load dashboard data. Please check your connection or permissions.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const formatDate = (date: Date) => {
-    return new Intl.DateTimeFormat("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    }).format(date)
-  }
+    return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "long", day: "numeric" }).format(date);
+  };
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
       </div>
-    )
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-screen text-red-600">
+        {error}
+      </div>
+    );
   }
 
   return (
@@ -218,11 +244,18 @@ export default function PosDashboard() {
 
         {/* Recent Products Table */}
         <Card>
-          <CardHeader>
-            <CardTitle>Recent Products</CardTitle>
-            <CardDescription>The latest 10 products added to your inventory</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <CardHeader>
+          <div className="flex justify-between items-center">
+            <div>
+              <CardTitle>Recent Products</CardTitle>
+              <CardDescription>The latest 10 products added to your inventory</CardDescription>
+            </div>
+            <Link href="/pos/products">
+              <Button className="bg-purple-500 text-white hover:bg-purple-600 hover:text-white" variant="outline">View All Products</Button>
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -237,8 +270,8 @@ export default function PosDashboard() {
               <TableBody>
                 {recentProducts.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-4 text-muted-foreground">
-                      No products found
+                    <TableCell colSpan={6} className="text-centaer py-4 text-muted-foreground">
+                      No recent products found
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -248,7 +281,7 @@ export default function PosDashboard() {
                         {product.main_image_url ? (
                           <div className="relative w-10 h-10 rounded-md overflow-hidden">
                             <Image
-                              src={product.main_image_url || "/placeholder.svg"}
+                              src={product.main_image_url}
                               alt={product.name}
                               fill
                               className="object-cover"
@@ -267,18 +300,28 @@ export default function PosDashboard() {
                       </TableCell>
                       <TableCell>{product.category || "N/A"}</TableCell>
                       <TableCell>
-                        <Badge variant={product.status === "active" ? "default" : "secondary"}>
-                          {product.status || "N/A"}
-                        </Badge>
+                      <Badge
+  variant={product.status === "active" ? "default" : "secondary"}
+  className={
+    product.status === "active"
+      ? "bg-green-500 text-white hover:bg-green-600"
+      : "bg-red-500 text-white hover:bg-red-600"
+  }
+>
+  {product.status || "N/A"}
+</Badge>
+
+
                       </TableCell>
                     </TableRow>
                   ))
                 )}
               </TableBody>
             </Table>
+
           </CardContent>
         </Card>
       </div>
     </div>
-  )
+  );
 }

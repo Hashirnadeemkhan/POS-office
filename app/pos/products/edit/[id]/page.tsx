@@ -113,7 +113,7 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
 
         if (!productDoc.exists()) {
           toast.error("Product not found")
-          router.push("/products")
+          router.push("/pos/products")
           return
         }
 
@@ -182,7 +182,7 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
       } catch (error) {
         console.error("Error fetching product:", error)
         toast.error("Failed to load product")
-        router.push("/products")
+        router.push("/pos/products")
       }
     }
 

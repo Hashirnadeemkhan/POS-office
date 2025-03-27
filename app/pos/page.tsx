@@ -3,19 +3,37 @@
 import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
-import { Home, ClipboardList, History, BarChart2, Search, MinusCircle, PlusCircle, LogOut, Printer, CreditCard, DollarSign, Wallet, X } from 'lucide-react'
+import {
+  Home,
+  ClipboardList,
+  History,
+  BarChart2,
+  Search,
+  MinusCircle,
+  PlusCircle,
+  LogOut,
+  Printer,
+  CreditCard,
+  DollarSign,
+  Wallet,
+} from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
-import { collection, query, getDocs, orderBy, addDoc, serverTimestamp } from "firebase/firestore"
+import { collection, query, getDocs, orderBy, addDoc, serverTimestamp, doc, getDoc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { toast } from "sonner"
 
-// Types
 interface Product {
   id: string
   name: string
@@ -53,6 +71,8 @@ interface Order {
   paymentMethod: string
   status: string
   createdAt: Date
+  customerName?: string
+  customerPhone?: string
 }
 
 export default function POS() {
@@ -72,8 +92,15 @@ export default function POS() {
   const [showReceiptModal, setShowReceiptModal] = useState(false)
   const [currentOrder, setCurrentOrder] = useState<Order | null>(null)
   const TAX_RATE = 0.1 // 10% tax rate
+  const [showNewOrderModal, setShowNewOrderModal] = useState(false)
+  const [customerName, setCustomerName] = useState("")
+  const [customerPhone, setCustomerPhone] = useState("")
+  const [restaurantDetails, setRestaurantDetails] = useState({
+    name: "RESTAURANT NAME",
+    address: "123 Main Street, City",
+    phone: "Tel: (123) 456-7890"
+  })
 
-  // Get current date and time
   const currentDate = new Date()
   const formattedDate = currentDate.toLocaleDateString("en-US", {
     weekday: "short",
@@ -87,7 +114,6 @@ export default function POS() {
     hour12: true,
   })
 
-  // Handle sign out
   const handleSignOut = async () => {
     try {
       router.replace("/pos/login")
@@ -96,11 +122,28 @@ export default function POS() {
     }
   }
 
-  // Fetch data function (memoized with useCallback)
+  const fetchRestaurantData = useCallback(async () => {
+    try {
+      // Replace 'YOUR_RESTAURANT_ID' with actual restaurant ID or get from auth context
+      const restaurantRef = doc(db, "restaurants", "YOUR_RESTAURANT_ID")
+      const restaurantSnap = await getDoc(restaurantRef)
+      if (restaurantSnap.exists()) {
+        const data = restaurantSnap.data()
+        setRestaurantDetails({
+          name: data.name || "RESTAURANT NAME",
+          address: data.address || "123 Main Street, City",
+          phone: data.phone || "Tel: (123) 456-7890"
+        })
+      }
+    } catch (error) {
+      console.error("Error fetching restaurant details:", error)
+      toast.error("Failed to load restaurant details")
+    }
+  }, [])
+
   const fetchData = useCallback(async () => {
     setIsLoading(true)
     try {
-      // Fetch categories first
       const categoriesSnapshot = await getDocs(query(collection(db, "categories"), orderBy("name")))
       const categoriesData: Category[] = [
         {
@@ -121,7 +164,6 @@ export default function POS() {
         })
       })
 
-      // Fetch all products initially to calculate counts
       const allProductsSnapshot = await getDocs(query(collection(db, "products"), orderBy("name")))
       const allProductsData = allProductsSnapshot.docs
         .filter((doc) => doc.data().status !== "inactive")
@@ -138,7 +180,6 @@ export default function POS() {
           gallery_images: doc.data().gallery_images || [],
         }))
 
-      // Update category item counts
       const updatedCategories = categoriesData.map((category) => {
         if (category.id === "all") {
           return { ...category, itemCount: allProductsData.length }
@@ -149,7 +190,6 @@ export default function POS() {
 
       setCategories(updatedCategories)
 
-      // Fetch filtered products based on selected category
       let productsData: Product[] = []
       if (selectedCategory === "all") {
         productsData = allProductsData
@@ -162,7 +202,6 @@ export default function POS() {
 
       setProducts(productsData)
 
-      // Initialize quantities
       const initialQuantities: { [key: string]: number } = {}
       productsData.forEach((product: Product) => {
         initialQuantities[product.id] = 0
@@ -175,14 +214,13 @@ export default function POS() {
       toast.error("Failed to load data")
       setIsLoading(false)
     }
-  }, [selectedCategory]) // Dependency: selectedCategory
+  }, [selectedCategory])
 
-  // Fetch data when component mounts or selectedCategory changes
   useEffect(() => {
     fetchData()
-  }, [fetchData]) // Include fetchData in the dependency array
+    fetchRestaurantData()
+  }, [fetchData, fetchRestaurantData])
 
-  // Helper function to map category names to icon names
   const getCategoryIconName = (categoryName: string): string => {
     const categoryMap: { [key: string]: string } = {
       Appetizers: "appetizer",
@@ -198,7 +236,6 @@ export default function POS() {
     return categoryMap[categoryName] || "menu"
   }
 
-  // Handle quantity change
   const handleQuantityChange = (productId: string, change: number) => {
     setQuantities((prev) => {
       const newQuantity = Math.max(0, (prev[productId] || 0) + change)
@@ -206,7 +243,6 @@ export default function POS() {
     })
   }
 
-  // Update order items
   useEffect(() => {
     const items: OrderItem[] = []
     let subtotalAmount = 0
@@ -235,12 +271,8 @@ export default function POS() {
     setTotal(subtotalAmount + taxAmount)
   }, [quantities, products])
 
-  // Filter products
-  const filteredProducts = products.filter((product) =>
-    product.name.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  const filteredProducts = products.filter((product) => product.name.toLowerCase().includes(searchQuery.toLowerCase()))
 
-  // Handle payment
   const handlePayment = () => {
     if (orderItems.length === 0) {
       toast.error("Please add items to your order.")
@@ -249,10 +281,22 @@ export default function POS() {
     setShowPaymentModal(true)
   }
 
-  // Handle order completion
   const handleCompleteOrder = async () => {
+    if (!customerName.trim()) {
+      toast.error("Customer name is required")
+      return
+    }
+    if (!customerPhone.trim()) {
+      toast.error("Phone number is required")
+      return
+    }
+    const phoneRegex = /^\d{10}$/
+    if (!phoneRegex.test(customerPhone)) {
+      toast.error("Please enter a valid 10-digit phone number")
+      return
+    }
+
     try {
-      // Create order in database
       const orderData = {
         items: orderItems,
         subtotal,
@@ -261,11 +305,12 @@ export default function POS() {
         paymentMethod,
         status: "completed",
         createdAt: serverTimestamp(),
+        customerName,
+        customerPhone,
       }
 
       const docRef = await addDoc(collection(db, "orders"), orderData)
-      
-      // Create order object for receipt
+
       const newOrder: Order = {
         id: docRef.id,
         items: orderItems,
@@ -275,19 +320,23 @@ export default function POS() {
         paymentMethod,
         status: "completed",
         createdAt: new Date(),
+        customerName,
+        customerPhone,
       }
-      
+
       setCurrentOrder(newOrder)
       setShowPaymentModal(false)
       setShowReceiptModal(true)
-      
-      // Reset quantities
+
       const resetQuantities: { [key: string]: number } = {}
       products.forEach((product) => {
         resetQuantities[product.id] = 0
       })
       setQuantities(resetQuantities)
-      
+
+      setCustomerName("")
+      setCustomerPhone("")
+
       toast.success("Order placed successfully!")
     } catch (error) {
       console.error("Error creating order:", error)
@@ -295,9 +344,8 @@ export default function POS() {
     }
   }
 
-  // Handle print receipt
   const handlePrintReceipt = () => {
-    const receiptWindow = window.open('', '_blank')
+    const receiptWindow = window.open("", "_blank")
     if (receiptWindow) {
       receiptWindow.document.write(`
         <html>
@@ -306,6 +354,7 @@ export default function POS() {
             <style>
               body { font-family: 'Courier New', monospace; margin: 0; padding: 20px; width: 300px; }
               .header { text-align: center; margin-bottom: 20px; }
+              .customer { margin-bottom: 15px; border-bottom: 1px dashed #000; padding-bottom: 10px; }
               .items { margin-bottom: 20px; }
               .item { margin-bottom: 5px; }
               .totals { border-top: 1px dashed #000; padding-top: 10px; }
@@ -316,16 +365,30 @@ export default function POS() {
           </head>
           <body>
             <div class="header">
-              <h2>RESTAURANT NAME</h2>
-              <p>123 Main Street, City</p>
-              <p>Tel: (123) 456-7890</p>
+              <h2>${restaurantDetails.name}</h2>
+              <p>${restaurantDetails.address}</p>
+              <p>${restaurantDetails.phone}</p>
               <p>${new Date().toLocaleString()}</p>
               <p>Order #: ${currentOrder?.id.slice(-6)}</p>
             </div>
             
+            ${
+              currentOrder?.customerName || currentOrder?.customerPhone
+                ? `
+            <div class="customer">
+              <h3>CUSTOMER DETAILS</h3>
+              ${currentOrder?.customerName ? `<p>Name: ${currentOrder.customerName}</p>` : ""}
+              ${currentOrder?.customerPhone ? `<p>Phone: ${currentOrder.customerPhone}</p>` : ""}
+            </div>
+            `
+                : ""
+            }
+            
             <div class="items">
               <h3>ORDER DETAILS</h3>
-              ${currentOrder?.items.map(item => `
+              ${currentOrder?.items
+                .map(
+                  (item) => `
                 <div class="item">
                   <div>${item.name} x ${item.quantity}</div>
                   <div style="display: flex; justify-content: space-between;">
@@ -333,7 +396,9 @@ export default function POS() {
                     <span>$${(item.price * item.quantity).toFixed(2)}</span>
                   </div>
                 </div>
-              `).join('')}
+              `,
+                )
+                .join("")}
             </div>
             
             <div class="totals">
@@ -367,7 +432,6 @@ export default function POS() {
     }
   }
 
-  // Get category icon component
   const getCategoryIcon = (iconName: string) => {
     switch (iconName) {
       case "menu":
@@ -588,9 +652,7 @@ export default function POS() {
 
   return (
     <div className="min-h-screen bg-white flex">
-      {/* Main Content */}
       <div className="flex-1">
-        {/* Header */}
         <header className="flex items-center justify-between px-4 py-2 border-b">
           <div className="flex items-center gap-2">
             <div className="bg-purple-600 text-white p-2 rounded-lg">
@@ -615,8 +677,6 @@ export default function POS() {
               <p className="text-xs text-gray-500">Easy handle sale</p>
             </div>
           </div>
-
-          {/* Navigation */}
           <nav className="flex items-center gap-6">
             <Link href="/pos" className="flex flex-col items-center text-purple-600">
               <Home size={20} />
@@ -635,8 +695,6 @@ export default function POS() {
               <span className="text-xs">Report</span>
             </Link>
           </nav>
-
-          {/* User Info */}
           <div className="flex items-center gap-4">
             <div className="text-right">
               <p className="text-sm text-purple-600">{formattedDate}</p>
@@ -663,7 +721,6 @@ export default function POS() {
           </div>
         </header>
 
-        {/* Search and New Order */}
         <div className="flex items-center justify-between px-6 py-4">
           <div className="relative w-96">
             <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
@@ -677,13 +734,7 @@ export default function POS() {
           </div>
           <Button
             onClick={() => {
-              // Reset quantities
-              const resetQuantities: { [key: string]: number } = {}
-              products.forEach((product) => {
-                resetQuantities[product.id] = 0
-              })
-              setQuantities(resetQuantities)
-              toast.success("New order started")
+              setShowNewOrderModal(true)
             }}
             className="bg-purple-600 text-white px-6 py-2 rounded-full hover:bg-purple-700 transition-colors"
           >
@@ -691,7 +742,6 @@ export default function POS() {
           </Button>
         </div>
 
-        {/* Categories */}
         <div className="flex gap-2 px-4 mb-6 overflow-x-auto">
           {categories.map((category) => (
             <div
@@ -715,9 +765,8 @@ export default function POS() {
           ))}
         </div>
 
-        {/* Menu Items */}
         <div
-          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-4 px-4 pb-8 overflow-y-auto"
+          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-3 gap-4 px-4 pb-8 overflow-y-auto"
           style={{ maxHeight: "calc(100vh - 250px)" }}
         >
           {isLoading ? (
@@ -750,7 +799,6 @@ export default function POS() {
                     </div>
                   </div>
                   <p className="font-bold text-gray-900 mt-2">Rs {product.base_price.toLocaleString()}</p>
-
                   <div className="flex items-center justify-between mt-2">
                     <Button
                       variant="ghost"
@@ -778,10 +826,8 @@ export default function POS() {
         </div>
       </div>
 
-      {/* Order Summary Sidebar */}
       <div className="w-96 border-l bg-gray-50 p-4 flex flex-col h-screen">
         <h2 className="text-xl font-bold mb-4">Order Summary</h2>
-
         {orderItems.length === 0 ? (
           <div className="flex-1 flex items-center justify-center">
             <p className="text-gray-500">No items added yet</p>
@@ -801,7 +847,6 @@ export default function POS() {
                 </div>
               ))}
             </div>
-
             <div className="mt-4 border-t pt-4">
               <div className="flex justify-between mb-2">
                 <p className="text-gray-600">Subtotal</p>
@@ -815,7 +860,6 @@ export default function POS() {
                 <p className="font-bold">Total</p>
                 <p className="font-bold text-lg">Rs {total.toLocaleString()}</p>
               </div>
-
               <Button
                 className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-lg"
                 onClick={handlePayment}
@@ -827,13 +871,36 @@ export default function POS() {
         )}
       </div>
 
-      {/* Payment Modal */}
       <Dialog open={showPaymentModal} onOpenChange={setShowPaymentModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Payment Method</DialogTitle>
           </DialogHeader>
           <div className="py-4">
+            <div className="space-y-4 mb-4">
+              <h3 className="font-medium">Customer Information</h3>
+              <div className="grid grid-cols-1 gap-2">
+                <Label htmlFor="paymentCustomerName">Customer Name</Label>
+                <Input
+                  id="paymentCustomerName"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  placeholder="Enter customer name"
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                <Label htmlFor="paymentCustomerPhone">Phone Number</Label>
+                <Input
+                  id="paymentCustomerPhone"
+                  value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  placeholder="Enter phone number"
+                  required
+                />
+              </div>
+            </div>
+            <h3 className="font-medium mb-3">Payment Method</h3>
             <RadioGroup value={paymentMethod} onValueChange={setPaymentMethod} className="space-y-4">
               <div className="flex items-center space-x-2 border p-3 rounded-lg">
                 <RadioGroupItem value="cash" id="cash" />
@@ -892,7 +959,6 @@ export default function POS() {
         </DialogContent>
       </Dialog>
 
-      {/* Receipt Modal */}
       <Dialog open={showReceiptModal} onOpenChange={setShowReceiptModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -900,26 +966,35 @@ export default function POS() {
           </DialogHeader>
           <div className="py-4 border rounded-lg p-4 bg-white">
             <div className="text-center mb-4">
-              <h3 className="font-bold text-lg">RESTAURANT NAME</h3>
-              <p className="text-sm">123 Main Street, City</p>
-              <p className="text-sm">Tel: (123) 456-7890</p>
+              <h3 className="font-bold text-lg">{restaurantDetails.name}</h3>
+              <p className="text-sm">{restaurantDetails.address}</p>
+              <p className="text-sm">{restaurantDetails.phone}</p>
               <p className="text-sm">{new Date().toLocaleString()}</p>
               <p className="text-sm">Order #: {currentOrder?.id.slice(-6)}</p>
             </div>
-            
+            {(currentOrder?.customerName || currentOrder?.customerPhone) && (
+              <div className="mb-4 border-b pb-2">
+                <h4 className="font-bold text-sm mb-1">CUSTOMER DETAILS</h4>
+                {currentOrder?.customerName && <p className="text-sm">Name: {currentOrder.customerName}</p>}
+                {currentOrder?.customerPhone && <p className="text-sm">Phone: {currentOrder.customerPhone}</p>}
+              </div>
+            )}
             <div className="mb-4">
               <h4 className="font-bold text-sm border-b pb-1 mb-2">ORDER DETAILS</h4>
               {currentOrder?.items.map((item, index) => (
                 <div key={index} className="mb-2">
                   <div className="flex justify-between text-sm">
-                    <span>{item.name} x {item.quantity}</span>
+                    <span>
+                      {item.name} x {item.quantity}
+                    </span>
                     <span>Rs {(item.price * item.quantity).toLocaleString()}</span>
                   </div>
-                  <p className="text-xs text-gray-500">{item.quantity} x Rs {item.price.toLocaleString()}</p>
+                  <p className="text-xs text-gray-500">
+                    {item.quantity} x Rs {item.price.toLocaleString()}
+                  </p>
                 </div>
               ))}
             </div>
-            
             <div className="border-t pt-2">
               <div className="flex justify-between text-sm">
                 <span>Subtotal:</span>
@@ -937,7 +1012,6 @@ export default function POS() {
                 <span>Payment Method: {currentOrder?.paymentMethod.toUpperCase()}</span>
               </div>
             </div>
-            
             <div className="text-center mt-4 text-sm">
               <p>Thank you for your purchase!</p>
               <p>Please come again</p>
@@ -949,6 +1023,105 @@ export default function POS() {
             </Button>
             <Button onClick={handlePrintReceipt} className="bg-purple-600 hover:bg-purple-700">
               <Printer className="mr-2 h-4 w-4" /> Print Receipt
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showNewOrderModal} onOpenChange={setShowNewOrderModal}>
+        <DialogContent className="sm:max-w-[80%] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>New Order</DialogTitle>
+            <DialogDescription>Select products and enter customer information for the new order.</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
+            <div>
+              <h3 className="font-medium mb-3">Customer Information</h3>
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-2">
+                  <Label htmlFor="customerName">Customer Name</Label>
+                  <Input
+                    id="customerName"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Enter customer name"
+                  />
+                </div>
+                <div className="grid grid-cols-1 gap-2">
+                  <Label htmlFor="customerPhone">Phone Number</Label>
+                  <Input
+                    id="customerPhone"
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    placeholder="Enter phone number"
+                  />
+                </div>
+              </div>
+            </div>
+            <div>
+              <h3 className="font-medium mb-3">Products</h3>
+              <div className="relative mb-4">
+                <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                <Input
+                  type="text"
+                  placeholder="Search products..."
+                  className="w-full pl-8 pr-4 py-2 rounded-lg border border-gray-300"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[400px] overflow-y-auto">
+                {filteredProducts.map((product) => (
+                  <div key={product.id} className="border rounded-lg overflow-hidden">
+                    <div className="relative h-24 bg-gray-100">
+                      <Image
+                        src={product.main_image_url || "/placeholder.svg?height=96&width=96"}
+                        alt={product.name}
+                        fill
+                        className="object-cover"
+                      />
+                    </div>
+                    <div className="p-2">
+                      <h3 className="font-medium text-gray-900 text-sm line-clamp-1">{product.name}</h3>
+                      <p className="font-bold text-gray-900 text-sm mt-1">Rs {product.base_price.toLocaleString()}</p>
+                      <div className="flex items-center justify-between mt-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleQuantityChange(product.id, -1)}
+                          className="text-purple-600 p-1 rounded-md hover:bg-purple-100 h-8 w-8"
+                          disabled={quantities[product.id] === 0}
+                        >
+                          <MinusCircle size={16} />
+                        </Button>
+                        <span className="font-medium text-sm">{quantities[product.id] || 0}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleQuantityChange(product.id, 1)}
+                          className="text-purple-600 p-1 rounded-md hover:bg-purple-100 h-8 w-8"
+                        >
+                          <PlusCircle size={16} />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNewOrderModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                setShowNewOrderModal(false)
+                toast.success("New order started")
+              }}
+              className="bg-purple-600 hover:bg-purple-700"
+            >
+              Start Order
             </Button>
           </DialogFooter>
         </DialogContent>
