@@ -42,6 +42,8 @@ export default function CreateRestaurantPage() {
     email: "",
     password: "",
     ownerName: "",
+    address: "", // Added address field
+    phoneNumber: "", // Added phone number field
     activationToken: "",
     activationDate: today,
     expiryDate: defaultExpiryDateString,
@@ -106,6 +108,8 @@ export default function CreateRestaurantPage() {
         name: formData.name,
         email: formData.email,
         ownerName: formData.ownerName,
+        address: formData.address, // Add address to the document
+        phoneNumber: formData.phoneNumber, // Add phone number to the document
         activationToken,
         isActive: true,
         uid: user.uid,
@@ -213,6 +217,30 @@ export default function CreateRestaurantPage() {
                   value={formData.ownerName}
                   onChange={handleChange}
                   placeholder="Enter owner name"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="address">Address</Label>
+                <Input
+                  id="address"
+                  name="address"
+                  value={formData.address}
+                  onChange={handleChange}
+                  placeholder="Enter restaurant address"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="phoneNumber">Phone Number</Label>
+                <Input
+                  id="phoneNumber"
+                  name="phoneNumber"
+                  value={formData.phoneNumber}
+                  onChange={handleChange}
+                  placeholder="Enter phone number"
                   required
                 />
               </div>

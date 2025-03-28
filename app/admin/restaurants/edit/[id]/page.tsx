@@ -1,172 +1,180 @@
 // app/admin/restaurants/[id]/edit/page.tsx
-"use client";
+"use client"
 
-import type React from "react";
-import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { ArrowLeft, Loader2, Calendar, RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { toast } from "sonner";
-import { generateActivationToken } from "@/lib/utils";
-import { useAuth } from "@/lib/auth-context";
+import type React from "react"
+import { useState, useEffect, useCallback } from "react"
+import { useRouter } from "next/navigation"
+import { doc, getDoc, updateDoc } from "firebase/firestore"
+import { db } from "@/lib/firebase"
+import { ArrowLeft, Loader2, Calendar, RefreshCw } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import { toast } from "sonner"
+import { generateActivationToken } from "@/lib/utils"
+import { useAuth } from "@/lib/auth-context"
 
 interface Restaurant {
-  id: string;
-  name: string;
-  email: string;
-  ownerName: string;
-  activationToken: string;
-  isActive: boolean;
-  tokenActivationDate?: string;
-  tokenExpiresAt?: string;
+  id: string
+  name: string
+  email: string
+  ownerName: string
+  address: string // Added address field
+  phoneNumber: string // Added phone number field
+  activationToken: string
+  isActive: boolean
+  tokenActivationDate?: string
+  tokenExpiresAt?: string
 }
 
 export default function EditRestaurantPage({ params }: { params: { id: string } }) {
-  const { userRole } = useAuth();
+  const { userRole } = useAuth()
   const [formData, setFormData] = useState<Restaurant>({
     id: "",
     name: "",
     email: "",
     ownerName: "",
+    address: "", // Initialize address
+    phoneNumber: "", // Initialize phone number
     activationToken: "",
     isActive: true,
     tokenActivationDate: "",
     tokenExpiresAt: "",
-  });
-  const [originalEmail, setOriginalEmail] = useState(""); // Track original email
-  const [password, setPassword] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [regenerateToken, setRegenerateToken] = useState(false);
-  const [originalToken, setOriginalToken] = useState("");
-  const [newToken, setNewToken] = useState("");
-  const [isTokenRefreshing, setIsTokenRefreshing] = useState(false);
-  const router = useRouter();
+  })
+  const [originalEmail, setOriginalEmail] = useState("") // Track original email
+  const [password, setPassword] = useState("")
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [regenerateToken, setRegenerateToken] = useState(false)
+  const [originalToken, setOriginalToken] = useState("")
+  const [newToken, setNewToken] = useState("")
+  const [isTokenRefreshing, setIsTokenRefreshing] = useState(false)
+  const router = useRouter()
 
   const fetchRestaurant = useCallback(async () => {
-    setIsLoading(true);
+    setIsLoading(true)
     try {
-      const restaurantRef = doc(db, "restaurants", params.id);
-      const restaurantSnap = await getDoc(restaurantRef);
+      const restaurantRef = doc(db, "restaurants", params.id)
+      const restaurantSnap = await getDoc(restaurantRef)
 
       if (restaurantSnap.exists()) {
-        const data = restaurantSnap.data();
+        const data = restaurantSnap.data()
         const tokenActivationDate = data.tokenActivationDate
           ? new Date(data.tokenActivationDate).toISOString().split("T")[0]
-          : "";
-        const tokenExpiresAt = data.tokenExpiresAt ? new Date(data.tokenExpiresAt).toISOString().split("T")[0] : "";
+          : ""
+        const tokenExpiresAt = data.tokenExpiresAt ? new Date(data.tokenExpiresAt).toISOString().split("T")[0] : ""
 
-        const currentToken = data.activationToken || "";
-        setOriginalToken(currentToken);
-        setOriginalEmail(data.email || "");
+        const currentToken = data.activationToken || ""
+        setOriginalToken(currentToken)
+        setOriginalEmail(data.email || "")
 
         setFormData({
           id: restaurantSnap.id,
           name: data.name || "",
           email: data.email || "",
           ownerName: data.ownerName || "",
+          address: data.address || "", // Set address from data
+          phoneNumber: data.phoneNumber || "", // Set phone number from data
           activationToken: currentToken,
           isActive: data.isActive || false,
           tokenActivationDate,
           tokenExpiresAt,
-        });
+        })
       } else {
-        toast.error("Restaurant not found");
-        router.push("/admin/restaurants");
+        toast.error("Restaurant not found")
+        router.push("/admin/restaurants")
       }
     } catch (error) {
-      console.error("Error fetching restaurant:", error);
-      toast.error("Failed to load restaurant details");
+      console.error("Error fetching restaurant:", error)
+      toast.error("Failed to load restaurant details")
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  }, [params.id, router]);
+  }, [params.id, router])
 
   useEffect(() => {
-    fetchRestaurant();
-  }, [fetchRestaurant]);
+    fetchRestaurant()
+  }, [fetchRestaurant])
 
   useEffect(() => {
     if (regenerateToken) {
       if (!newToken) {
-        const generatedToken = generateActivationToken();
-        setNewToken(generatedToken);
-        setFormData((prev) => ({ ...prev, activationToken: generatedToken }));
+        const generatedToken = generateActivationToken()
+        setNewToken(generatedToken)
+        setFormData((prev) => ({ ...prev, activationToken: generatedToken }))
       }
     } else {
-      setFormData((prev) => ({ ...prev, activationToken: originalToken }));
-      setNewToken("");
+      setFormData((prev) => ({ ...prev, activationToken: originalToken }))
+      setNewToken("")
     }
-  }, [regenerateToken, originalToken, newToken]);
+  }, [regenerateToken, originalToken, newToken])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
+    const { name, value } = e.target
+    setFormData((prev) => ({ ...prev, [name]: value }))
+  }
 
   const handleSwitchChange = (checked: boolean) => {
-    setFormData((prev) => ({ ...prev, isActive: checked }));
-  };
+    setFormData((prev) => ({ ...prev, isActive: checked }))
+  }
 
   const handleRegenerateTokenChange = (checked: boolean) => {
-    setRegenerateToken(checked);
-  };
+    setRegenerateToken(checked)
+  }
 
   const handleManualTokenRefresh = () => {
-    setIsTokenRefreshing(true);
+    setIsTokenRefreshing(true)
     setTimeout(() => {
-      const generatedToken = generateActivationToken();
-      setNewToken(generatedToken);
-      setFormData((prev) => ({ ...prev, activationToken: generatedToken }));
-      setIsTokenRefreshing(false);
-    }, 300);
-  };
+      const generatedToken = generateActivationToken()
+      setNewToken(generatedToken)
+      setFormData((prev) => ({ ...prev, activationToken: generatedToken }))
+      setIsTokenRefreshing(false)
+    }, 300)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!userRole) return;
+    e.preventDefault()
+    if (!userRole) return
 
-    setIsSubmitting(true);
+    setIsSubmitting(true)
 
     try {
-      const activationDate = formData.tokenActivationDate ? new Date(formData.tokenActivationDate) : new Date();
-      let expiryDate = formData.tokenExpiresAt ? new Date(formData.tokenExpiresAt) : new Date();
+      const activationDate = formData.tokenActivationDate ? new Date(formData.tokenActivationDate) : new Date()
+      let expiryDate = formData.tokenExpiresAt ? new Date(formData.tokenExpiresAt) : new Date()
 
       if (expiryDate <= activationDate) {
-        toast.warning("Expiry date must be after activation date");
-        setIsSubmitting(false);
-        return;
+        toast.warning("Expiry date must be after activation date")
+        setIsSubmitting(false)
+        return
       }
 
-      const maxExpiryDate = new Date(activationDate);
-      maxExpiryDate.setDate(activationDate.getDate() + 365);
+      const maxExpiryDate = new Date(activationDate)
+      maxExpiryDate.setDate(activationDate.getDate() + 365)
 
       if (expiryDate > maxExpiryDate) {
-        toast.warning("Expiry date limited to maximum 365 days from activation date");
-        expiryDate = maxExpiryDate;
+        toast.warning("Expiry date limited to maximum 365 days from activation date")
+        expiryDate = maxExpiryDate
       }
 
-      const restaurantRef = doc(db, "restaurants", params.id);
+      const restaurantRef = doc(db, "restaurants", params.id)
 
       // Update Firestore document
       const updateData: any = {
         name: formData.name,
         ownerName: formData.ownerName,
         email: formData.email,
+        address: formData.address, // Update address
+        phoneNumber: formData.phoneNumber, // Update phone number
         isActive: formData.isActive,
         activationToken: formData.activationToken,
         tokenActivationDate: activationDate.toISOString(),
         tokenExpiresAt: expiryDate.toISOString(),
         lastUpdated: new Date(),
-      };
+      }
 
-      await updateDoc(restaurantRef, updateData);
+      await updateDoc(restaurantRef, updateData)
 
       // Update email and/or password via server-side API if changed
       if (formData.email !== originalEmail || password) {
@@ -179,22 +187,22 @@ export default function EditRestaurantPage({ params }: { params: { id: string } 
             password: password || undefined,
             userRole,
           }),
-        });
+        })
         if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || "Failed to update user");
+          const errorData = await response.json()
+          throw new Error(errorData.message || "Failed to update user")
         }
       }
 
-      toast.success("Restaurant updated successfully");
-      router.push("/admin/restaurants");
+      toast.success("Restaurant updated successfully")
+      router.push("/admin/restaurants")
     } catch (error: any) {
-      console.error("Error updating restaurant:", error);
-      toast.error(error.message || "Failed to update restaurant");
+      console.error("Error updating restaurant:", error)
+      toast.error(error.message || "Failed to update restaurant")
     } finally {
-      setIsSubmitting(false);
+      setIsSubmitting(false)
     }
-  };
+  }
 
   if (isLoading) {
     return (
@@ -204,7 +212,7 @@ export default function EditRestaurantPage({ params }: { params: { id: string } 
           <p>Loading restaurant details...</p>
         </div>
       </div>
-    );
+    )
   }
 
   return (
@@ -241,6 +249,30 @@ export default function EditRestaurantPage({ params }: { params: { id: string } 
                 value={formData.ownerName}
                 onChange={handleChange}
                 placeholder="Enter owner name"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="address">Address</Label>
+              <Input
+                id="address"
+                name="address"
+                value={formData.address}
+                onChange={handleChange}
+                placeholder="Enter restaurant address"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="phoneNumber">Phone Number</Label>
+              <Input
+                id="phoneNumber"
+                name="phoneNumber"
+                value={formData.phoneNumber}
+                onChange={handleChange}
+                placeholder="Enter phone number"
                 required
               />
             </div>
@@ -392,5 +424,6 @@ export default function EditRestaurantPage({ params }: { params: { id: string } 
         </form>
       </Card>
     </div>
-  );
+  )
 }
+

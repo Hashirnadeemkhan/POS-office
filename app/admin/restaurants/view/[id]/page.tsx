@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { doc, getDoc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
-import { ArrowLeft, Calendar, Mail, User, Store, Key, Clock, Pencil } from "lucide-react"
+import { ArrowLeft, Calendar, Mail, User, Store, Key, Clock, Pencil, MapPin, Phone } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -16,6 +16,8 @@ interface Restaurant {
   name: string
   email: string
   ownerName: string
+  address: string // Added address field
+  phoneNumber: string // Added phone number field
   activationToken: string
   isActive: boolean
   createdAt: Date
@@ -43,6 +45,8 @@ export default function ViewRestaurantPage({ params }: { params: { id: string } 
           name: data.name || "",
           email: data.email || "",
           ownerName: data.ownerName || "",
+          address: data.address || "", // Set address from data
+          phoneNumber: data.phoneNumber || "", // Set phone number from data
           activationToken: data.activationToken || "",
           isActive: data.isActive || false,
           createdAt: data.createdAt?.toDate() || new Date(),
@@ -139,6 +143,22 @@ export default function ViewRestaurantPage({ params }: { params: { id: string } 
               </div>
 
               <div className="flex items-start gap-2">
+                <MapPin className="h-5 w-5 text-muted-foreground mt-0.5" />
+                <div>
+                  <h3 className="font-medium">Address</h3>
+                  <p>{restaurant.address}</p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2">
+                <Phone className="h-5 w-5 text-muted-foreground mt-0.5" />
+                <div>
+                  <h3 className="font-medium">Phone Number</h3>
+                  <p>{restaurant.phoneNumber}</p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2">
                 <Mail className="h-5 w-5 text-muted-foreground mt-0.5" />
                 <div>
                   <h3 className="font-medium">Email</h3>
@@ -219,3 +239,4 @@ export default function ViewRestaurantPage({ params }: { params: { id: string } 
     </div>
   )
 }
+
