@@ -1,4 +1,3 @@
-// PosDashboard.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -8,10 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { CalendarDays, Package, ShoppingBag, Tag } from "lucide-react";
 import { collection, query, getDocs, orderBy, limit } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { useAuth } from "@/lib/auth-context";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
-import Link from "next/link"; // Add this import
+import Link from "next/link";
 
 interface Product {
   id: string;
@@ -31,7 +29,6 @@ interface LicenseInfo {
 }
 
 export default function PosDashboard() {
-  const { isAuthenticated, user, loading: authLoading } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [recentProducts, setRecentProducts] = useState<Product[]>([]);
   const [categoryCount, setCategoryCount] = useState(0);
@@ -44,17 +41,9 @@ export default function PosDashboard() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (authLoading) return; // Wait for auth to finish loading
-
-    console.log("Authenticated user:", user); // Debug
-    if (isAuthenticated && user) {
-      fetchData();
-    } else {
-      console.log("No user authenticated for POS Dashboard");
-      setError("Please log in to view the dashboard.");
-      setIsLoading(false);
-    }
-  }, [isAuthenticated, user, authLoading]);
+    // Fetch data regardless of authentication status
+    fetchData();
+  }, []);
 
   const fetchData = async () => {
     try {
@@ -244,18 +233,18 @@ export default function PosDashboard() {
 
         {/* Recent Products Table */}
         <Card>
-        <CardHeader>
-          <div className="flex justify-between items-center">
-            <div>
-              <CardTitle>Recent Products</CardTitle>
-              <CardDescription>The latest 10 products added to your inventory</CardDescription>
+          <CardHeader>
+            <div className="flex justify-between items-center">
+              <div>
+                <CardTitle>Recent Products</CardTitle>
+                <CardDescription>The latest 10 products added to your inventory</CardDescription>
+              </div>
+              <Link href="/pos/products">
+                <Button className="bg-purple-500 text-white hover:bg-purple-600 hover:text-white" variant="outline">View All Products</Button>
+              </Link>
             </div>
-            <Link href="/pos/products">
-              <Button className="bg-purple-500 text-white hover:bg-purple-600 hover:text-white" variant="outline">View All Products</Button>
-            </Link>
-          </div>
-        </CardHeader>
-        <CardContent>
+          </CardHeader>
+          <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -270,7 +259,7 @@ export default function PosDashboard() {
               <TableBody>
                 {recentProducts.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-centaer py-4 text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center py-4 text-muted-foreground">
                       No recent products found
                     </TableCell>
                   </TableRow>
@@ -300,25 +289,22 @@ export default function PosDashboard() {
                       </TableCell>
                       <TableCell>{product.category || "N/A"}</TableCell>
                       <TableCell>
-                      <Badge
-  variant={product.status === "active" ? "default" : "secondary"}
-  className={
-    product.status === "active"
-      ? "bg-green-500 text-white hover:bg-green-600"
-      : "bg-red-500 text-white hover:bg-red-600"
-  }
->
-  {product.status || "N/A"}
-</Badge>
-
-
+                        <Badge
+                          variant={product.status === "active" ? "default" : "secondary"}
+                          className={
+                            product.status === "active"
+                              ? "bg-green-500 text-white hover:bg-green-600"
+                              : "bg-red-500 text-white hover:bg-red-600"
+                          }
+                        >
+                          {product.status || "N/A"}
+                        </Badge>
                       </TableCell>
                     </TableRow>
                   ))
                 )}
               </TableBody>
             </Table>
-
           </CardContent>
         </Card>
       </div>

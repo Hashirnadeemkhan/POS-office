@@ -33,6 +33,7 @@ import { Label } from "@/components/ui/label"
 import { collection, query, getDocs, orderBy, addDoc, serverTimestamp, doc, getDoc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { toast } from "sonner"
+import { getAuth } from "firebase/auth"
 
 interface Product {
   id: string
@@ -95,10 +96,11 @@ export default function POS() {
   const [showNewOrderModal, setShowNewOrderModal] = useState(false)
   const [customerName, setCustomerName] = useState("")
   const [customerPhone, setCustomerPhone] = useState("")
+  // Update the restaurantDetails state to include address and phone
   const [restaurantDetails, setRestaurantDetails] = useState({
     name: "RESTAURANT NAME",
     address: "123 Main Street, City",
-    phone: "Tel: (123) 456-7890"
+    phone: "Tel: (123) 456-7890",
   })
 
   const currentDate = new Date()
@@ -122,18 +124,32 @@ export default function POS() {
     }
   }
 
+  // Replace the fetchRestaurantData function with this updated version
   const fetchRestaurantData = useCallback(async () => {
     try {
-      // Replace 'YOUR_RESTAURANT_ID' with actual restaurant ID or get from auth context
-      const restaurantRef = doc(db, "restaurants", "YOUR_RESTAURANT_ID")
+      // Get the current user from Firebase Auth
+      const auth = getAuth()
+      const currentUser = auth.currentUser
+
+      if (!currentUser) {
+        console.error("No user is signed in")
+        return
+      }
+
+      // Fetch the restaurant document using the current user's UID
+      const restaurantRef = doc(db, "restaurants", currentUser.uid)
       const restaurantSnap = await getDoc(restaurantRef)
+
       if (restaurantSnap.exists()) {
         const data = restaurantSnap.data()
         setRestaurantDetails({
           name: data.name || "RESTAURANT NAME",
           address: data.address || "123 Main Street, City",
-          phone: data.phone || "Tel: (123) 456-7890"
+          phone: data.phoneNumber || "Tel: (123) 456-7890", // Note: using phoneNumber from our schema
         })
+      } else {
+        console.error("Restaurant document not found")
+        toast.error("Failed to load restaurant details")
       }
     } catch (error) {
       console.error("Error fetching restaurant details:", error)
@@ -1129,3 +1145,4 @@ export default function POS() {
     </div>
   )
 }
+
