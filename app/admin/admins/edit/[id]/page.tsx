@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/lib/auth-context";
 import { getFunctions, httpsCallable } from "firebase/functions";
@@ -23,6 +23,12 @@ const validatePassword = (password: string) => {
     special: /[!@#$%^&*]/.test(password),
   };
 };
+
+// Define the expected response type from the Cloud Function
+interface UpdatePasswordResponse {
+  success: boolean;
+  message?: string;
+}
 
 export default function EditAdminPage({ params }: { params: { id: string } }) {
   const [formData, setFormData] = useState({
@@ -125,24 +131,35 @@ export default function EditAdminPage({ params }: { params: { id: string } }) {
       }
 
       if (password) {
-        const updateAdminPassword = httpsCallable(functions, "updateAdminPassword");
+        const updateAdminPassword = httpsCallable<
+          { adminId: string; newPassword: string },
+          UpdatePasswordResponse
+        >(functions, "updateAdminPassword");
+        
         const result = await updateAdminPassword({
           adminId: id,
           newPassword: password,
         });
+        
+        // Now TypeScript knows result.data has a success property
         if (result.data.success) {
           toast.success("Password updated successfully - old password will no longer work");
         } else {
-          throw new Error("Failed to update password");
+          throw new Error(result.data.message || "Failed to update password");
         }
       }
 
       await updateDoc(docRef, updateData);
       toast.success("Admin account updated successfully");
       router.push("/admin/admins");
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error updating admin:", error);
-      toast.error(error.message || "Failed to update admin account");
+      
+      if (error instanceof Error) {
+        toast.error(error.message || "Failed to update admin account");
+      } else {
+        toast.error("An unknown error occurred");
+      }
     } finally {
       setIsSubmitting(false);
     }

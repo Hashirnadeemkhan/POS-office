@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ArrowLeft, Save } from "lucide-react";
+import { Loader2, ArrowLeft, Save } from 'lucide-react';
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -57,7 +57,7 @@ export default function EditProfile() {
           phoneNumber: userData.phoneNumber || "",
           role: userRole || userData.role || "admin",
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("Error fetching profile:", error);
         toast.error("Failed to load profile data");
       } finally {
@@ -139,11 +139,17 @@ export default function EditProfile() {
 
       toast.success("Profile updated successfully");
       router.push("/admin/profile/view");
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error updating profile:", error);
-      toast.error(error.message || "Failed to update profile");
-      if (error.message.includes("user-token-expired") || error.message.includes("No authenticated user")) {
-        router.push("/admin/login");
+      
+      // Type guard to safely access error properties
+      if (error instanceof Error) {
+        toast.error(error.message || "Failed to update profile");
+        if (error.message.includes("user-token-expired") || error.message.includes("No authenticated user")) {
+          router.push("/admin/login");
+        }
+      } else {
+        toast.error("An unknown error occurred");
       }
     } finally {
       setSaving(false);
