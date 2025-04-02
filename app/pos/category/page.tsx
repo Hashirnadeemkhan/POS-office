@@ -1,16 +1,15 @@
 "use client";
-import React from "react"
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-
-import { PlusCircle, Pencil, Trash2 } from 'lucide-react';
+import { PlusCircle, Pencil, Trash2 } from "lucide-react";
 import { AddCategoryModal } from "@/src/components/AddCategoryModal";
 import { EditCategoryModal } from "@/src/components/Edit-category-dailog";
 import { DeleteCategoryDialog } from "@/src/components/Delete-category-dialog";
 import { toast } from "sonner";
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, where } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { posDb, posAuth } from "@/firebase/client"; // Import posAuth for authentication
 import { useFirebaseAnalytics } from "@/lib/firebase-analytics";
 
 interface Category {
@@ -20,6 +19,7 @@ interface Category {
 }
 
 export default function CategoryPage() {
+  const router = useRouter();
   const [categories, setCategories] = useState<Category[]>([]);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -28,64 +28,77 @@ export default function CategoryPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasSubcategories, setHasSubcategories] = useState(false);
 
-  // Initialize Firebase Analytics (runs only in browser)
   useFirebaseAnalytics();
 
   useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        const q = query(collection(db, "categories"), orderBy("name"));
-        const querySnapshot = await getDocs(q);
-        const categoriesList = querySnapshot.docs.map((doc) => ({
-          id: doc.id,
-          name: doc.data().name,
-          description: doc.data().description || "",
-        }));
-        setCategories(categoriesList);
-        setIsLoading(false);
-      } catch (error) {
-        console.error("Error fetching categories:", error);
-        toast.error("Failed to load categories.");
-        setIsLoading(false);
+    const unsubscribe = posAuth.onAuthStateChanged((user) => {
+      if (user) {
+        console.log("Authenticated user UID:", user.uid); // Debug: Log user UID
+        fetchCategories();
+      } else {
+        console.error("No user signed in");
+        toast.error("Please sign in to view categories.");
+        router.push("/login"); // Redirect to login if not authenticated
       }
-    };
+    });
+    return () => unsubscribe();
+  }, [router]);
 
-    fetchCategories();
-  }, []);
+  const fetchCategories = async () => {
+    try {
+      setIsLoading(true);
+      const q = query(collection(posDb, "categories"), orderBy("name"));
+      const querySnapshot = await getDocs(q);
+      const categoriesList = querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        name: doc.data().name || "Unnamed Category", // Fallback if name is missing
+        description: doc.data().description || "",
+      }));
+      console.log("Fetched categories:", categoriesList); // Debug: Log fetched data
+      setCategories(categoriesList);
+      setIsLoading(false);
+    } catch (error: any) {
+      console.error("Error fetching categories:", error.message, error.code); // Detailed error logging
+      toast.error(`Failed to load categories: ${error.message}`);
+      setIsLoading(false);
+    }
+  };
 
   const handleAddCategory = async (name: string, description: string) => {
     try {
-      const docRef = await addDoc(collection(db, "categories"), {
+      const docRef = await addDoc(collection(posDb, "categories"), {
         name,
         description: description || "",
       });
       setCategories([...categories, { id: docRef.id, name, description: description || "" }]);
       toast.success(`${name} has been added successfully.`);
-    } catch (error) {
-      console.error("Error adding category:", error);
-      toast.error("Failed to add category.");
+    } catch (error: any) {
+      console.error("Error adding category:", error.message, error.code);
+      toast.error(`Failed to add category: ${error.message}`);
     }
   };
 
   const handleUpdateCategory = async (id: string, name: string, description: string) => {
     try {
-      const categoryRef = doc(db, "categories", id);
+      const categoryRef = doc(posDb, "categories", id);
       await updateDoc(categoryRef, { name, description: description || "" });
       setCategories(categories.map((cat) => (cat.id === id ? { id, name, description } : cat)));
       toast.success(`${name} has been updated successfully.`);
-    } catch (error) {
-      console.error("Error updating category:", error);
-      toast.error("Failed to update category.");
+    } catch (error: any) {
+      console.error("Error updating category:", error.message, error.code);
+      toast.error(`Failed to update category: ${error.message}`);
     }
   };
 
   const checkForSubcategories = async (categoryId: string) => {
     try {
-      const q = query(collection(db, "subcategories"), where("categoryId", "==", categoryId));
+      const q = query(collection(posDb, "subcategories"), where("categoryId", "==", categoryId));
       const querySnapshot = await getDocs(q);
-      return !querySnapshot.empty;
-    } catch (error) {
-      console.error("Error checking subcategories:", error);
+      const hasSubcats = !querySnapshot.empty;
+      console.log(`Subcategories for category ${categoryId}:`, hasSubcats); // Debug
+      return hasSubcats;
+    } catch (error: any) {
+      console.error("Error checking subcategories:", error.message, error.code);
       return false;
     }
   };
@@ -100,14 +113,14 @@ export default function CategoryPage() {
           return;
         }
 
-        const categoryRef = doc(db, "categories", selectedCategory.id);
+        const categoryRef = doc(posDb, "categories", selectedCategory.id);
         await deleteDoc(categoryRef);
         setCategories(categories.filter((cat) => cat.id !== selectedCategory.id));
-        toast.error(`${selectedCategory.name} has been deleted.`);
+        toast.success(`${selectedCategory.name} has been deleted.`); // Changed to success
         setIsDeleteDialogOpen(false);
-      } catch (error) {
-        console.error("Error deleting category:", error);
-        toast.error("Failed to delete category.");
+      } catch (error: any) {
+        console.error("Error deleting category:", error.message, error.code);
+        toast.error(`Failed to delete category: ${error.message}`);
       }
     }
   };

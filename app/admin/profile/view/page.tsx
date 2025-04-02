@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { auth, db } from "@/lib/firebase"
+import { adminAuth, adminDb } from "@/firebase/client" // Corrected import
 import { doc, getDoc } from "firebase/firestore"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -32,7 +32,7 @@ export default function ViewProfile() {
 
       try {
         setLoading(true)
-        const user = auth.currentUser
+        const user = adminAuth.currentUser // Updated to use adminAuth
 
         if (!user) {
           router.push("/admin/login")
@@ -40,11 +40,10 @@ export default function ViewProfile() {
         }
 
         // Get the admin user document from Firestore
-        const userDoc = await getDoc(doc(db, "adminUsers", userId))
+        const userDoc = await getDoc(doc(adminDb, "adminUsers", userId)) // Updated to use adminDb
         const userData = userDoc.exists() ? userDoc.data() : {}
 
         setProfile({
-          // Always use the current authenticated user's display name and email
           displayName: user.displayName || userData.name || "User",
           email: user.email || "Email not available",
           phoneNumber: userData.phoneNumber || "",
@@ -104,6 +103,14 @@ export default function ViewProfile() {
           </div>
 
           <div className="space-y-1">
+            <div className="text-sm font-medium text-muted-foreground">Phone Number</div>
+            <div className="flex items-center">
+              <Phone className="w-4 h-4 mr-2 text-muted-foreground" />
+              <span>{profile.phoneNumber || "Not provided"}</span>
+            </div>
+          </div>
+
+          <div className="space-y-1">
             <div className="text-sm font-medium text-muted-foreground">Role</div>
             <div>{profile.role}</div>
           </div>
@@ -127,4 +134,3 @@ export default function ViewProfile() {
     </div>
   )
 }
-

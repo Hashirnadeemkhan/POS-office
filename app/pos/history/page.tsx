@@ -24,9 +24,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { format } from "date-fns"
-import { collection, query, getDocs, orderBy, type Timestamp } from "firebase/firestore"
-import { db } from "@/lib/firebase"
+import { collection, query, getDocs, orderBy, doc, getDoc, type Timestamp } from "firebase/firestore" // Added doc, getDoc
+import { posDb } from "@/firebase/client"
 import { toast } from "sonner"
+import { useAuth } from "@/lib/auth-context"
 
 // Types
 interface OrderItem {
@@ -46,10 +47,12 @@ interface Order {
   paymentMethod: string
   status: string
   createdAt: Timestamp
+  restaurantId?: string
 }
 
 export default function OrderHistory() {
   const router = useRouter()
+  const { logout, userId } = useAuth()
   const [orders, setOrders] = useState<Order[]>([])
   const [filteredOrders, setFilteredOrders] = useState<Order[]>([])
   const [searchQuery, setSearchQuery] = useState("")
@@ -60,6 +63,11 @@ export default function OrderHistory() {
   const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({})
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [showReceiptModal, setShowReceiptModal] = useState(false)
+  const [restaurantDetails, setRestaurantDetails] = useState({
+    name: "RESTAURANT NAME",
+    address: "123 Main Street, City",
+    phone: "Tel: (123) 456-7890",
+  })
 
   // Get current date and time
   const currentDate = new Date()
@@ -78,24 +86,49 @@ export default function OrderHistory() {
   // Handle sign out
   const handleSignOut = async () => {
     try {
+      await logout()
       router.replace("/pos/login")
     } catch (error) {
       console.error("Error signing out:", error)
+      toast.error("Failed to sign out")
     }
   }
+
+  // Fetch restaurant details
+  useEffect(() => {
+    const fetchRestaurantData = async () => {
+      if (!userId) return
+      try {
+        const restaurantRef = doc(posDb, "restaurants", userId)
+        const restaurantSnap = await getDoc(restaurantRef) // Changed from getDocs to getDoc
+        if (restaurantSnap.exists()) { // .exists() works with DocumentSnapshot
+          const data = restaurantSnap.data() // .data() works with DocumentSnapshot
+          setRestaurantDetails({
+            name: data.name || "RESTAURANT NAME",
+            address: data.address || "123 Main Street, City",
+            phone: data.phoneNumber || "Tel: (123) 456-7890",
+          })
+        }
+      } catch (error) {
+        console.error("Error fetching restaurant details:", error)
+        toast.error("Failed to load restaurant details")
+      }
+    }
+    fetchRestaurantData()
+  }, [userId])
 
   // Fetch orders
   useEffect(() => {
     const fetchOrders = async () => {
-      setIsLoading(true)
+      if (!userId) return;
+      setIsLoading(true);
       try {
-        const q = query(collection(db, "orders"), orderBy("createdAt", "desc"))
-        const querySnapshot = await getDocs(q)
-
-        const ordersData: Order[] = []
-        querySnapshot.forEach((doc) => {
-          const data = doc.data()
-          ordersData.push({
+        const q = query(collection(posDb, "orders"), orderBy("createdAt", "desc"));
+        const querySnapshot = await getDocs(q);
+  
+        const ordersData: Order[] = querySnapshot.docs.map((doc) => {
+          const data = doc.data();
+          return {
             id: doc.id,
             items: data.items || [],
             subtotal: data.subtotal || 0,
@@ -104,21 +137,23 @@ export default function OrderHistory() {
             paymentMethod: data.paymentMethod || "cash",
             status: data.status || "completed",
             createdAt: data.createdAt,
-          })
-        })
-
-        setOrders(ordersData)
-        setFilteredOrders(ordersData)
-        setIsLoading(false)
+            restaurantId: data.restaurantId || data.userId, // Handle both cases
+          };
+        });
+  
+        console.log("Fetched orders:", ordersData); // Log to check data
+        setOrders(ordersData);
+        setFilteredOrders(ordersData);
       } catch (error) {
-        console.error("Error fetching orders:", error)
-        toast.error("Failed to load order history")
-        setIsLoading(false)
+        console.error("Error fetching orders:", error);
+        toast.error("Failed to load order history");
+      } finally {
+        setIsLoading(false);
       }
-    }
-
-    fetchOrders()
-  }, [])
+    };
+  
+    fetchOrders();
+  }, [userId]);
 
   // Apply filters
   useEffect(() => {
@@ -195,9 +230,9 @@ export default function OrderHistory() {
           </head>
           <body>
             <div class="header">
-              <h2>RESTAURANT NAME</h2>
-              <p>123 Main Street, City</p>
-              <p>Tel: (123) 456-7890</p>
+              <h2>${restaurantDetails.name}</h2>
+              <p>${restaurantDetails.address}</p>
+              <p>${restaurantDetails.phone}</p>
               <p>${selectedOrder.createdAt.toDate().toLocaleString()}</p>
               <p>Order #: ${selectedOrder.id.slice(-6)}</p>
             </div>
@@ -521,9 +556,9 @@ export default function OrderHistory() {
           {selectedOrder && (
             <div className="py-4 border rounded-lg p-4 bg-white">
               <div className="text-center mb-4">
-                <h3 className="font-bold text-lg">RESTAURANT NAME</h3>
-                <p className="text-sm">123 Main Street, City</p>
-                <p className="text-sm">Tel: (123) 456-7890</p>
+                <h3 className="font-bold text-lg">{restaurantDetails.name}</h3>
+                <p className="text-sm">{restaurantDetails.address}</p>
+                <p className="text-sm">{restaurantDetails.phone}</p>
                 <p className="text-sm">{selectedOrder.createdAt.toDate().toLocaleString()}</p>
                 <p className="text-sm">Order #: {selectedOrder.id.slice(-6)}</p>
               </div>
@@ -582,4 +617,3 @@ export default function OrderHistory() {
     </div>
   )
 }
-

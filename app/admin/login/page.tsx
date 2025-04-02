@@ -3,8 +3,8 @@
 import React, { useState, FormEvent } from "react"
 import { Eye, EyeOff } from "lucide-react"
 import { signInWithEmailAndPassword } from "firebase/auth"
-import { doc, setDoc } from "firebase/firestore"
-import { auth, db } from "@/lib/firebase"
+import { doc, setDoc, getDoc } from "firebase/firestore"
+import { adminAuth, adminDb } from "@/firebase/client"
 import { useRouter } from "next/navigation"
 import { v4 as uuidv4 } from "uuid"
 import { useAuth } from "@/lib/auth-context"
@@ -16,14 +16,16 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const router = useRouter()
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, authType } = useAuth()
 
-  // Redirect if already authenticated
   React.useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && authType === "admin") {
       router.push("/admin/dashboard")
+    } else if (isAuthenticated && authType === "restaurant") {
+      // If they're authenticated as restaurant but trying to access admin login
+      // Log them out of restaurant first (handled in auth context)
     }
-  }, [isAuthenticated, router])
+  }, [isAuthenticated, authType, router])
 
   const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -31,38 +33,38 @@ export default function LoginPage() {
     setIsLoading(true)
 
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password)
+      // Sign out from POS auth if it exists to avoid conflicts
+      try {
+        await adminAuth.signOut()
+      } catch (e) {
+        // Ignore errors here
+      }
+
+      const userCredential = await signInWithEmailAndPassword(adminAuth, email, password)
       const user = userCredential.user
 
+      const adminDoc = await getDoc(doc(adminDb, "adminUsers", user.uid))
+      if (!adminDoc.exists()) {
+        throw new Error("Not authorized as admin")
+      }
+
       const sessionToken = uuidv4()
-      await setDoc(doc(db, "activeSessions", user.uid), {
+      await setDoc(doc(adminDb, "activeSessions", user.uid), {
         sessionToken,
         email: user.email,
         createdAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       })
 
       localStorage.setItem("sessionToken", sessionToken)
-      console.log("User logged in successfully")
       router.push("/admin/dashboard")
     } catch (err: any) {
       console.error("Login error:", err)
-      switch (err.code) {
-        case "auth/user-not-found":
-        case "auth/wrong-password":
-          setError("Invalid email or password. Please try again.")
-          break
-        case "auth/too-many-requests":
-          setError("Too many failed login attempts. Please try again later.")
-          break
-        default:
-          setError("An error occurred during login. Please try again.")
-      }
+      setError(err.message || "Failed to sign in. Please check your credentials.")
     } finally {
       setIsLoading(false)
     }
   }
-
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-md bg-white rounded-lg shadow-lg p-8 mx-4">

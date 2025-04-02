@@ -1,75 +1,85 @@
-"use client"
+"use client";
 
-import { useState, useEffect, useCallback } from "react"
-import { useRouter } from "next/navigation"
-import { doc, getDoc } from "firebase/firestore"
-import { db } from "@/lib/firebase"
-import { ArrowLeft, Calendar, Mail, User, Store, Key, Clock, Pencil, MapPin, Phone } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { toast } from "sonner"
-import { format } from "date-fns"
+import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, Calendar, Mail, User, Store, Key, Clock, Pencil, MapPin, Phone } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
+import { format } from "date-fns";
 
 interface Restaurant {
-  id: string
-  name: string
-  email: string
-  ownerName: string
-  address: string // Added address field
-  phoneNumber: string // Added phone number field
-  activationToken: string
-  isActive: boolean
-  createdAt: Date
-  lastUpdated: Date
-  tokenActivationDate?: Date
-  tokenExpiresAt?: Date
+  id: string;
+  name: string;
+  email: string;
+  ownerName: string;
+  address: string;
+  phoneNumber: string;
+  activationToken: string;
+  isActive: boolean;
+  createdAt: Date;
+  lastUpdated: Date;
+  tokenActivationDate?: Date;
+  tokenExpiresAt?: Date;
 }
 
 export default function ViewRestaurantPage({ params }: { params: { id: string } }) {
-  const [restaurant, setRestaurant] = useState<Restaurant | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const router = useRouter()
+  const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter();
 
-  // Wrap fetchRestaurant in useCallback to stabilize its reference
   const fetchRestaurant = useCallback(async () => {
-    setIsLoading(true)
+    setIsLoading(true);
     try {
-      const restaurantRef = doc(db, "restaurants", params.id)
-      const restaurantSnap = await getDoc(restaurantRef)
+      const response = await fetch(`/api/restaurants/get/${params.id}`);
+      const data = await response.json();
 
-      if (restaurantSnap.exists()) {
-        const data = restaurantSnap.data()
-        setRestaurant({
-          id: restaurantSnap.id,
-          name: data.name || "",
-          email: data.email || "",
-          ownerName: data.ownerName || "",
-          address: data.address || "", // Set address from data
-          phoneNumber: data.phoneNumber || "", // Set phone number from data
-          activationToken: data.activationToken || "",
-          isActive: data.isActive || false,
-          createdAt: data.createdAt?.toDate() || new Date(),
-          lastUpdated: data.lastUpdated?.toDate() || new Date(),
-          tokenActivationDate: data.tokenActivationDate ? new Date(data.tokenActivationDate) : undefined,
-          tokenExpiresAt: data.tokenExpiresAt ? new Date(data.tokenExpiresAt) : undefined,
-        })
-      } else {
-        toast.error("Restaurant not found")
-        router.push("/admin/restaurants")
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to fetch restaurant");
       }
-    } catch (error) {
-      console.error("Error fetching restaurant:", error)
-      toast.error("Failed to load restaurant details")
-    } finally {
-      setIsLoading(false)
-    }
-  }, [params.id, router]) // Dependencies for fetchRestaurant
 
-  // Use fetchRestaurant in useEffect with proper dependency
+      const { restaurant: restaurantData } = data;
+
+      // Helper function to parse dates safely
+      const parseDate = (dateValue: string | undefined): Date => {
+        if (!dateValue) return new Date(); // Fallback to current date if undefined
+        const parsed = new Date(dateValue);
+        return isNaN(parsed.getTime()) ? new Date() : parsed; // Fallback if invalid
+      };
+
+      console.log("Raw restaurantData:", restaurantData); // Debug raw data
+
+      setRestaurant({
+        id: restaurantData.id,
+        name: restaurantData.name || "",
+        email: restaurantData.email || "",
+        ownerName: restaurantData.ownerName || "",
+        address: restaurantData.address || "",
+        phoneNumber: restaurantData.phoneNumber || "",
+        activationToken: restaurantData.activationToken || "",
+        isActive: restaurantData.isActive || false,
+        createdAt: parseDate(restaurantData.createdAt),
+        lastUpdated: parseDate(restaurantData.lastUpdated),
+        tokenActivationDate: restaurantData.tokenActivationDate
+          ? parseDate(restaurantData.tokenActivationDate)
+          : undefined,
+        tokenExpiresAt: restaurantData.tokenExpiresAt
+          ? parseDate(restaurantData.tokenExpiresAt)
+          : undefined,
+      });
+    } catch (error) {
+      console.error("Error fetching restaurant:", error);
+      toast.error("Failed to load restaurant details");
+      router.push("/admin/restaurants");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [params.id, router]);
+
   useEffect(() => {
-    fetchRestaurant()
-  }, [fetchRestaurant])
+    fetchRestaurant();
+  }, [fetchRestaurant]);
 
   if (isLoading) {
     return (
@@ -79,7 +89,7 @@ export default function ViewRestaurantPage({ params }: { params: { id: string } 
           <p>Loading restaurant details...</p>
         </div>
       </div>
-    )
+    );
   }
 
   if (!restaurant) {
@@ -94,7 +104,7 @@ export default function ViewRestaurantPage({ params }: { params: { id: string } 
           </CardContent>
         </Card>
       </div>
-    )
+    );
   }
 
   return (
@@ -228,7 +238,7 @@ export default function ViewRestaurantPage({ params }: { params: { id: string } 
             <Button
               variant="outline"
               className="border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
-              onClick={() => router.push(`/admin/restaurants/edit/${restaurant.id}`)}
+              onClick={() => router.push(`/admin/restaurants/${restaurant.id}/edit`)}
             >
               <Pencil className="mr-2 h-4 w-4" />
               Edit
@@ -237,6 +247,5 @@ export default function ViewRestaurantPage({ params }: { params: { id: string } 
         </CardFooter>
       </Card>
     </div>
-  )
+  );
 }
-

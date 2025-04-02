@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "sonner"
 import { collection, addDoc, query, orderBy, onSnapshot, where } from "firebase/firestore"
-import { db } from "@/lib/firebase"
+import { posDb } from "@/firebase/client"
 import { saveImage, generateImageId } from "@/lib/imageStorage"
 import Image from "next/image"
 
@@ -81,7 +81,7 @@ export default function AddProductPage() {
 
   // Fetch categories from Firestore
   useEffect(() => {
-    const q = query(collection(db, "categories"), orderBy("name"))
+    const q = query(collection(posDb, "categories"), orderBy("name"))
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
@@ -105,7 +105,7 @@ export default function AddProductPage() {
       const selectedCategory = categories.find((cat) => cat.name === category)
       if (selectedCategory) {
         const q = query(
-          collection(db, "subcategories"),
+          collection(posDb, "subcategories"),
           where("categoryId", "==", selectedCategory.id),
           orderBy("name"),
         )
@@ -351,7 +351,7 @@ export default function AddProductPage() {
         }
       }
 
-      const productRef = await addDoc(collection(db, "products"), {
+      const productRef = await addDoc(collection(posDb, "products"), {
         name,
         sku,
         base_price: Number.parseFloat(basePrice),
@@ -372,7 +372,7 @@ export default function AddProductPage() {
           variantImageUrl = await saveImage(imageId, variant.imageFile)
         }
 
-        const variantRef = await addDoc(collection(db, "variants"), {
+        const variantRef = await addDoc(collection(posDb, "variants"), {
           product_id: productRef.id,
           name: variant.name,
           price: Number.parseFloat(variant.price),
@@ -381,7 +381,7 @@ export default function AddProductPage() {
         })
 
         for (const attr of variant.attributes) {
-          await addDoc(collection(db, "variant_attributes"), {
+          await addDoc(collection(posDb, "variant_attributes"), {
             variant_id: variantRef.id,
             key_name: attr.key,
             value_name: attr.value,
@@ -396,7 +396,7 @@ export default function AddProductPage() {
       })
 
       toast.success("Product added successfully")
-      router.push("/products")
+      router.push("/pos/products")
     } catch (error) {
       console.error("Error adding product:", error)
       toast.error("Failed to add product")
@@ -826,4 +826,3 @@ export default function AddProductPage() {
     </div>
   )
 }
-

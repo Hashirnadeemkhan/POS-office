@@ -1,31 +1,14 @@
 // ClientLayout.tsx
 "use client";
 
-import React, { useEffect } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import React from "react";
 import { Toaster } from "@/components/ui/sonner";
 import Sidebar from "@/src/components/Sidebar";
 import { useAuth } from "@/lib/auth-context";
 import { Loader2 } from "lucide-react";
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, loading, userRole } = useAuth();
-  const router = useRouter();
-  const pathname = usePathname();
-
-  useEffect(() => {
-    if (!loading) {
-      const isRestaurantUser = isAuthenticated && !userRole; // Restaurant user has no admin role
-      const targetLoginPath = pathname.startsWith("/pos") ? "/pos/login" : "/admin/login";
-      const targetDashboardPath = isRestaurantUser ? "/pos/dashboard" : "/admin/dashboard";
-
-      if (!isAuthenticated && !pathname.startsWith("/admin/login") && !pathname.startsWith("/pos/login")) {
-        router.push(targetLoginPath);
-      } else if (isAuthenticated && (pathname === "/admin/login" || pathname === "/pos/login")) {
-        router.push(targetDashboardPath);
-      }
-    }
-  }, [isAuthenticated, loading, pathname, router, userRole]);
+  const { isAuthenticated, loading, authType } = useAuth();
 
   if (loading) {
     return (
@@ -35,8 +18,10 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     );
   }
 
-  const shouldShowSidebar =
-    isAuthenticated && pathname !== "/admin/login" && pathname !== "/pos/login";
+  // Determine if sidebar should be shown
+  // Don't show sidebar on login pages
+  const shouldShowSidebar = isAuthenticated && 
+    (authType === "admin" || authType === "restaurant");
 
   return (
     <div className="flex h-screen">

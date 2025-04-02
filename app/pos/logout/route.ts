@@ -1,38 +1,48 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/firebase";
-import { doc, deleteDoc, getDoc } from "firebase/firestore";
-import { adminDb } from "@/lib/firebase-admin";
+import { posAdminDb } from "@/firebase/admin";
+import { Timestamp } from "firebase-admin/firestore"; // Import Timestamp
 
 export async function POST(request: Request) {
   try {
     const sessionToken = request.headers.get("x-session-token") || "";
 
-    // Fetch session document using Firebase Admin SDK
-    const sessionQuery = await adminDb
+    if (!sessionToken) {
+      return NextResponse.json({ error: "No session token provided" }, { status: 400 });
+    }
+
+    // Fetch session document
+    const sessionQuery = await posAdminDb
       .collection("restaurantSessions")
       .where("sessionToken", "==", sessionToken)
       .get();
 
     if (sessionQuery.empty) {
-      return NextResponse.json({ message: "Invalid or no session found" }, { status: 401 });
+      return NextResponse.json({ error: "Invalid or no session found" }, { status: 401 });
     }
 
     const sessionDoc = sessionQuery.docs[0];
     const sessionData = sessionDoc.data();
     const userId = sessionDoc.id;
 
-    // Check if session has expired
-    const currentTime = new Date().getTime();
-    if (sessionData.expiresAt && currentTime > sessionData.expiresAt) {
-      await deleteDoc(doc(db, "restaurantSessions", userId));
-      return NextResponse.json({ message: "Session expired, logged out" }, { status: 401 });
+    // Handle Firestore Timestamp for expiresAt
+    const expiresAt = sessionData.expiresAt instanceof Timestamp 
+      ? sessionData.expiresAt.toMillis() 
+      : sessionData.expiresAt;
+    const currentTime = Date.now();
+
+    if (expiresAt && currentTime > expiresAt) {
+      await posAdminDb.collection("restaurantSessions").doc(userId).delete();
+      return NextResponse.json({ error: "Session expired, logged out" }, { status: 401 });
     }
 
-    // Manually delete the session (logout)
-    await deleteDoc(doc(db, "restaurantSessions", userId));
-    return NextResponse.json({ message: "Logout successful" }, { status: 200 });
+    // Delete the session for logout
+    await posAdminDb.collection("restaurantSessions").doc(userId).delete();
+    return NextResponse.json({ success: true, message: "Restaurant logout successful" }, { status: 200 });
   } catch (error: any) {
-    console.error("POS Logout error:", error);
-    return NextResponse.json({ message: error.message || "Failed to logout" }, { status: 500 });
+    console.error("POS Logout Error:", error);
+    return NextResponse.json(
+      { error: error.message || "Internal server error during logout" },
+      { status: 500 }
+    );
   }
 }

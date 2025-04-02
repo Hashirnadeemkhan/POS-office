@@ -24,7 +24,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { collection, query, getDocs, orderBy, where, Timestamp, updateDoc, doc } from "firebase/firestore"
-import { db } from "@/lib/firebase"
+import { posDb } from "@/firebase/client" // Corrected import to use posDb
 import { toast } from "sonner"
 
 // Types
@@ -79,9 +79,19 @@ export default function OrderList() {
   // Handle sign out
   const handleSignOut = async () => {
     try {
+      // Call the logout API
+      const response = await fetch("/api/pos/logout", {
+        method: "POST",
+        headers: {
+          "x-session-token": localStorage.getItem("sessionToken") || "",
+        },
+      })
+      if (!response.ok) throw new Error("Logout failed")
+      localStorage.removeItem("sessionToken")
       router.replace("/pos/login")
     } catch (error) {
       console.error("Error signing out:", error)
+      toast.error("Failed to sign out")
     }
   }
 
@@ -100,7 +110,7 @@ export default function OrderList() {
         const endTimestamp = Timestamp.fromDate(tomorrow)
 
         const q = query(
-          collection(db, "orders"),
+          collection(posDb, "orders"), // Updated to posDb
           where("createdAt", ">=", startTimestamp),
           where("createdAt", "<=", endTimestamp),
           orderBy("createdAt", "desc"),
@@ -226,8 +236,8 @@ export default function OrderList() {
                 <div class="item">
                   <div>${item.name} x ${item.quantity}</div>
                   <div style="display: flex; justify-content: space-between;">
-                    <span>${item.quantity} x $${item.price.toFixed(2)}</span>
-                    <span>$${(item.price * item.quantity).toFixed(2)}</span>
+                    <span>${item.quantity} x Rs ${item.price.toFixed(2)}</span>
+                    <span>Rs ${(item.price * item.quantity).toFixed(2)}</span>
                   </div>
                 </div>
               `,
@@ -238,15 +248,15 @@ export default function OrderList() {
             <div class="totals">
               <div class="total-row">
                 <span>Subtotal:</span>
-                <span>$${selectedOrder.subtotal.toFixed(2)}</span>
+                <span>Rs ${selectedOrder.subtotal.toFixed(2)}</span>
               </div>
               <div class="total-row">
                 <span>Tax (10%):</span>
-                <span>$${selectedOrder.tax.toFixed(2)}</span>
+                <span>Rs ${selectedOrder.tax.toFixed(2)}</span>
               </div>
               <div class="total-row grand-total">
                 <span>TOTAL:</span>
-                <span>$${selectedOrder.total.toFixed(2)}</span>
+                <span>Rs ${selectedOrder.total.toFixed(2)}</span>
               </div>
               <div style="margin-top: 10px;">
                 <span>Payment Method: ${selectedOrder.paymentMethod.toUpperCase()}</span>
@@ -286,7 +296,7 @@ export default function OrderList() {
     if (!selectedOrder || !actionType) return
 
     try {
-      const orderRef = doc(db, "orders", selectedOrder.id)
+      const orderRef = doc(posDb, "orders", selectedOrder.id) // Updated to posDb
 
       await updateDoc(orderRef, {
         status: actionType === "complete" ? "completed" : actionType === "cancel" ? "cancelled" : "refunded",
@@ -717,4 +727,3 @@ export default function OrderList() {
     </div>
   )
 }
-

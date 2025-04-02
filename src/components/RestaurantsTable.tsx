@@ -1,19 +1,17 @@
 // src/components/RestaurantsTable.tsx
-"use client"
+"use client";
 
-import { useState, useEffect, useCallback } from "react"
-import { useRouter } from "next/navigation"
-import { collection, query, getDocs, doc, updateDoc, deleteDoc, orderBy, limit } from "firebase/firestore"
-import { db } from "@/lib/firebase"
-import { PlusCircle, Eye, Pencil, Trash2, Power, PowerOff, MoreHorizontal } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Badge } from "@/components/ui/badge"
-import Link from "next/link"
-import { toast } from "sonner"
-import { formatDistanceToNow } from "date-fns"
+import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
+import { toast } from "sonner";
+import { formatDistanceToNow } from "date-fns";
+import { PlusCircle, Eye, Pencil, Trash2, Power, PowerOff, MoreHorizontal } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,106 +21,114 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+} from "@/components/ui/alert-dialog";
 
 interface Restaurant {
-  id: string
-  name: string
-  email: string
-  ownerName: string
-  activationToken: string
-  isActive: boolean
-  createdAt: Date
-  lastUpdated: Date
-  tokenExpiresAt?: Date
+  id: string;
+  name: string;
+  email: string;
+  ownerName: string;
+  activationToken: string;
+  isActive: boolean;
+  createdAt: string;
+  lastUpdated: string;
+  tokenExpiresAt?: string;
 }
 
 interface RestaurantsTableProps {
-  showViewAllButton?: boolean // Controls "View All" button visibility and limits to 3 if true
+  showViewAllButton?: boolean;
 }
 
 export default function RestaurantsTable({ showViewAllButton = true }: RestaurantsTableProps) {
-  const [restaurants, setRestaurants] = useState<Restaurant[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [restaurantToDelete, setRestaurantToDelete] = useState<string | null>(null)
-  const router = useRouter()
+  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [restaurantToDelete, setRestaurantToDelete] = useState<string | null>(null);
+  const router = useRouter();
 
   const fetchRestaurants = useCallback(async () => {
-    setIsLoading(true)
+    setIsLoading(true);
     try {
-      const restaurantsRef = collection(db, "restaurants")
-      const q = showViewAllButton
-        ? query(restaurantsRef, orderBy("createdAt", "desc"), limit(3))
-        : query(restaurantsRef, orderBy("createdAt", "desc"))
+      const url = showViewAllButton ? "/api/restaurants/get?limit=3" : "/api/restaurants/get";
+      const response = await fetch(url);
+      const data = await response.json();
 
-      const querySnapshot = await getDocs(q)
-      const restaurantsList: Restaurant[] = []
-      querySnapshot.forEach((doc) => {
-        const data = doc.data()
-        restaurantsList.push({
-          id: doc.id,
-          name: data.name || "",
-          email: data.email || "",
-          ownerName: data.ownerName || "",
-          activationToken: data.activationToken || "",
-          isActive: data.isActive || false,
-          createdAt: data.createdAt?.toDate() || new Date(),
-          lastUpdated: data.lastUpdated?.toDate() || new Date(),
-          tokenExpiresAt: data.tokenExpiresAt ? new Date(data.tokenExpiresAt) : undefined,
-        })
-      })
-      setRestaurants(restaurantsList)
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to fetch restaurants");
+      }
+
+      const restaurantsList: Restaurant[] = data.restaurants.map((restaurant: any) => ({
+        ...restaurant,
+        createdAt: restaurant.createdAt,
+        lastUpdated: restaurant.lastUpdated,
+        tokenExpiresAt: restaurant.tokenExpiresAt,
+      }));
+
+      setRestaurants(restaurantsList);
     } catch (error) {
-      console.error("Error fetching restaurants:", error)
-      toast.error("Failed to load restaurants")
+      console.error("Error fetching restaurants:", error);
+      toast.error("Failed to load restaurants");
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }, [showViewAllButton]) // Dependency for useCallback
+  }, [showViewAllButton]);
 
   useEffect(() => {
-    fetchRestaurants()
-  }, [fetchRestaurants]) // Now depends on memoized fetchRestaurants
+    fetchRestaurants();
+  }, [fetchRestaurants]);
 
   const handleToggleStatus = async (id: string, currentStatus: boolean) => {
     try {
-      const restaurantRef = doc(db, "restaurants", id)
-      await updateDoc(restaurantRef, {
-        isActive: !currentStatus,
-        lastUpdated: new Date(),
-      })
+      const response = await fetch(`/api/restaurants/update/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: !currentStatus }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to update status");
+      }
+
       setRestaurants(
         restaurants.map((restaurant) =>
-          restaurant.id === id ? { ...restaurant, isActive: !currentStatus, lastUpdated: new Date() } : restaurant
+          restaurant.id === id
+            ? { ...restaurant, isActive: !currentStatus, lastUpdated: new Date().toISOString() }
+            : restaurant
         )
-      )
-      toast.success(`Restaurant ${currentStatus ? "deactivated" : "activated"} successfully`)
+      );
+      toast.success(`Restaurant ${currentStatus ? "deactivated" : "activated"} successfully`);
     } catch (error) {
-      console.error("Error updating restaurant status:", error)
-      toast.error("Failed to update restaurant status")
+      console.error("Error updating restaurant status:", error);
+      toast.error("Failed to update restaurant status");
     }
-  }
+  };
 
   const handleDeleteClick = (id: string) => {
-    setRestaurantToDelete(id)
-    setDeleteDialogOpen(true)
-  }
+    setRestaurantToDelete(id);
+    setDeleteDialogOpen(true);
+  };
 
   const confirmDelete = async () => {
-    if (!restaurantToDelete) return
+    if (!restaurantToDelete) return;
     try {
-      await deleteDoc(doc(db, "restaurants", restaurantToDelete))
-      setRestaurants(restaurants.filter((restaurant) => restaurant.id !== restaurantToDelete))
-      toast.success("Restaurant deleted successfully")
+      const response = await fetch(`/api/restaurants/delete/${restaurantToDelete}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to delete restaurant");
+      }
+
+      setRestaurants(restaurants.filter((restaurant) => restaurant.id !== restaurantToDelete));
+      toast.success("Restaurant deleted successfully");
     } catch (error) {
-      console.error("Error deleting restaurant:", error)
-      toast.error("Failed to delete restaurant")
+      console.error("Error deleting restaurant:", error);
+      toast.error("Failed to delete restaurant");
     } finally {
-      setDeleteDialogOpen(false)
-      setRestaurantToDelete(null)
+      setDeleteDialogOpen(false);
+      setRestaurantToDelete(null);
     }
-  }
+  };
 
   return (
     <div className="container py-10">
@@ -193,8 +199,8 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
                         {restaurant.isActive ? "Active" : "Inactive"}
                       </Badge>
                     </TableCell>
-                    <TableCell>{formatDistanceToNow(restaurant.createdAt, { addSuffix: true })}</TableCell>
-                    <TableCell>{formatDistanceToNow(restaurant.lastUpdated, { addSuffix: true })}</TableCell>
+                    <TableCell>{formatDistanceToNow(new Date(restaurant.createdAt), { addSuffix: true })}</TableCell>
+                    <TableCell>{formatDistanceToNow(new Date(restaurant.lastUpdated), { addSuffix: true })}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         <Button
@@ -276,5 +282,5 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
         </AlertDialogContent>
       </AlertDialog>
     </div>
-  )
+  );
 }

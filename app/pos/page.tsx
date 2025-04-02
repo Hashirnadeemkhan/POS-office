@@ -31,9 +31,9 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { collection, query, getDocs, orderBy, addDoc, serverTimestamp, doc, getDoc } from "firebase/firestore"
-import { db } from "@/lib/firebase"
+import {  posDb } from "@/firebase/client" // Added posDb
+import { useAuth } from "@/lib/auth-context"
 import { toast } from "sonner"
-import { getAuth } from "firebase/auth"
 
 interface Product {
   id: string
@@ -77,6 +77,7 @@ interface Order {
 }
 
 export default function POS() {
+  const { logout, userId } = useAuth() // Added userId from useAuth
   const router = useRouter()
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -96,7 +97,6 @@ export default function POS() {
   const [showNewOrderModal, setShowNewOrderModal] = useState(false)
   const [customerName, setCustomerName] = useState("")
   const [customerPhone, setCustomerPhone] = useState("")
-  // Update the restaurantDetails state to include address and phone
   const [restaurantDetails, setRestaurantDetails] = useState({
     name: "RESTAURANT NAME",
     address: "123 Main Street, City",
@@ -118,26 +118,18 @@ export default function POS() {
 
   const handleSignOut = async () => {
     try {
+      await logout()
       router.replace("/pos/login")
     } catch (error) {
       console.error("Error signing out:", error)
+      toast.error("Failed to sign out")
     }
   }
 
-  // Replace the fetchRestaurantData function with this updated version
   const fetchRestaurantData = useCallback(async () => {
+    if (!userId) return // Use userId from auth context
     try {
-      // Get the current user from Firebase Auth
-      const auth = getAuth()
-      const currentUser = auth.currentUser
-
-      if (!currentUser) {
-        console.error("No user is signed in")
-        return
-      }
-
-      // Fetch the restaurant document using the current user's UID
-      const restaurantRef = doc(db, "restaurants", currentUser.uid)
+      const restaurantRef = doc(posDb, "restaurants", userId)
       const restaurantSnap = await getDoc(restaurantRef)
 
       if (restaurantSnap.exists()) {
@@ -145,7 +137,7 @@ export default function POS() {
         setRestaurantDetails({
           name: data.name || "RESTAURANT NAME",
           address: data.address || "123 Main Street, City",
-          phone: data.phoneNumber || "Tel: (123) 456-7890", // Note: using phoneNumber from our schema
+          phone: data.phoneNumber || "Tel: (123) 456-7890",
         })
       } else {
         console.error("Restaurant document not found")
@@ -155,12 +147,12 @@ export default function POS() {
       console.error("Error fetching restaurant details:", error)
       toast.error("Failed to load restaurant details")
     }
-  }, [])
+  }, [userId])
 
   const fetchData = useCallback(async () => {
     setIsLoading(true)
     try {
-      const categoriesSnapshot = await getDocs(query(collection(db, "categories"), orderBy("name")))
+      const categoriesSnapshot = await getDocs(query(collection(posDb, "categories"), orderBy("name")))
       const categoriesData: Category[] = [
         {
           id: "all",
@@ -180,7 +172,7 @@ export default function POS() {
         })
       })
 
-      const allProductsSnapshot = await getDocs(query(collection(db, "products"), orderBy("name")))
+      const allProductsSnapshot = await getDocs(query(collection(posDb, "products"), orderBy("name")))
       const allProductsData = allProductsSnapshot.docs
         .filter((doc) => doc.data().status !== "inactive")
         .map((doc) => ({
@@ -223,11 +215,10 @@ export default function POS() {
         initialQuantities[product.id] = 0
       })
       setQuantities(initialQuantities)
-
-      setIsLoading(false)
     } catch (error) {
       console.error("Error fetching data:", error)
       toast.error("Failed to load data")
+    } finally {
       setIsLoading(false)
     }
   }, [selectedCategory])
@@ -325,7 +316,7 @@ export default function POS() {
         customerPhone,
       }
 
-      const docRef = await addDoc(collection(db, "orders"), orderData)
+      const docRef = await addDoc(collection(posDb, "orders"), orderData)
 
       const newOrder: Order = {
         id: docRef.id,
@@ -796,12 +787,12 @@ export default function POS() {
           ) : (
             filteredProducts.map((product) => (
               <div key={product.id} className="border rounded-lg overflow-hidden">
-                <div className="relative h-40 bg-gray-100">
+                <div className="relative h-40">
                   <Image
                     src={product.main_image_url || "/placeholder.svg?height=160&width=160"}
                     alt={product.name}
                     fill
-                    className="object-cover"
+                    className="object-contain"
                   />
                 </div>
                 <div className="p-3">

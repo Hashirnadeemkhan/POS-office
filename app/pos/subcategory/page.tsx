@@ -5,6 +5,7 @@ import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, Tabl
 import { Button } from "@/components/ui/button"
 import { PlusCircle, Pencil, Trash2 } from "lucide-react"
 import { toast } from "sonner"
+import { useFirebaseAnalytics } from "@/lib/firebase-analytics";
 import {
   collection,
   addDoc,
@@ -19,8 +20,7 @@ import {
 import { EditSubcategoryModal } from "@/src/components/EditSubCategoryModal"
 import { DeleteSubcategoryDialog } from "@/src/components/DeleteSubCategorDailog"
 import { AddSubcategoryModal } from "@/src/components/AddSubcategoryModal"
-import { db } from "@/lib/firebase"
-import { useFirebaseAnalytics } from "@/lib/firebase-analytics"
+import { posDb as db } from "@/firebase/client"; // Use posDb and alias it as dbimport { useFirebaseAnalytics } from "@/lib/firebase-analytics"
 
 interface Category {
   id: string

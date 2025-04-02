@@ -1,10 +1,9 @@
-// app/admin/profile/edit/page.tsx
 "use client";
 
 import type React from "react";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { auth, db } from "@/lib/firebase";
+import { adminAuth, adminDb } from "@/firebase/client";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { updateProfile } from "firebase/auth";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,14 +41,14 @@ export default function EditProfile() {
 
       try {
         setLoading(true);
-        const user = auth.currentUser;
+        const user = adminAuth.currentUser;
 
         if (!user) {
           router.push("/admin/login");
           return;
         }
 
-        const userDoc = await getDoc(doc(db, "adminUsers", userId));
+        const userDoc = await getDoc(doc(adminDb, "adminUsers", userId));
         const userData = userDoc.exists() ? userDoc.data() : {};
 
         setProfile({
@@ -80,49 +79,72 @@ export default function EditProfile() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userId) return;
+    if (!userId) {
+      toast.error("User ID is missing");
+      return;
+    }
 
     try {
       setSaving(true);
-      const user = auth.currentUser;
-      if (user) {
-        await updateProfile(user, { displayName: profile.displayName });
+      let user = adminAuth.currentUser;
+      if (!user) {
+        // Attempt to refresh the token
+        await adminAuth.currentUser?.getIdToken(true);
+        user = adminAuth.currentUser;
+        if (!user) {
+          throw new Error("No authenticated user found. Please log in again.");
+        }
+      }
+      console.log("userId from useAuth:", userId, "Firebase Auth UID:", user.uid);
 
-        const updateData: any = {
-          name: profile.displayName,
-          phoneNumber: profile.phoneNumber,
-        };
+      await updateProfile(user, { displayName: profile.displayName });
 
-        if (userRole === "superadmin") {
-          updateData.role = profile.role;
-          updateData.email = profile.email;
+      const updateData: any = {
+        name: profile.displayName,
+        phoneNumber: profile.phoneNumber,
+      };
 
-          if (profile.email !== user.email || password) {
-            const response = await fetch("/api/update-user", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                uid: userId,
-                email: profile.email !== user.email ? profile.email : undefined,
-                password: password || undefined,
-                userRole,
-              }),
-            });
-            if (!response.ok) {
-              const errorData = await response.json();
-              throw new Error(errorData.message || "Failed to update user");
-            }
+      if (userRole === "superadmin") {
+        updateData.role = profile.role;
+        updateData.email = profile.email;
+
+        const hasEmailUpdate = profile.email && profile.email !== user.email;
+        const hasPasswordUpdate = password && password.length >= 6;
+
+        if (hasEmailUpdate || hasPasswordUpdate) {
+          const apiPayload = {
+            uid: user.uid,
+            ...(hasEmailUpdate && { email: profile.email }),
+            ...(hasPasswordUpdate && { password }),
+          };
+
+          console.log("Sending to /api/update-user:", apiPayload);
+
+          const response = await fetch("/api/update-user", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(apiPayload),
+          });
+
+          const responseBody = await response.json();
+          console.log("API Response:", response.status, responseBody);
+
+          if (!response.ok) {
+            throw new Error(responseBody.error || "Failed to update user");
           }
         }
-
-        await updateDoc(doc(db, "adminUsers", userId), updateData);
-
-        toast.success("Profile updated successfully");
-        router.push("/admin/profile/view");
       }
-    } catch (error: any) {
+
+      await updateDoc(doc(adminDb, "adminUsers", userId), updateData);
+
+      toast.success("Profile updated successfully");
+      router.push("/admin/profile/view");
+    } catch (error) {
       console.error("Error updating profile:", error);
       toast.error(error.message || "Failed to update profile");
+      if (error.message.includes("user-token-expired") || error.message.includes("No authenticated user")) {
+        router.push("/admin/login");
+      }
     } finally {
       setSaving(false);
     }
@@ -155,9 +177,64 @@ export default function EditProfile() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="displayName">Full Name</Label>
-              <Input id="displayName" name="displayName" value={profile.displayName} onChange={handleChange} placeholder="Your full name" />
+              <Input
+                id="displayName"
+                name="displayName"
+                value={profile.displayName}
+                onChange={handleChange}
+                placeholder="Your full name"
+              />
             </div>
-            ...
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                value={profile.email}
+                onChange={handleChange}
+                placeholder="Your email"
+                disabled={userRole !== "superadmin"}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="phoneNumber">Phone Number</Label>
+              <Input
+                id="phoneNumber"
+                name="phoneNumber"
+                value={profile.phoneNumber}
+                onChange={handleChange}
+                placeholder="Your phone number"
+              />
+            </div>
+
+            {userRole === "superadmin" && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="password">New Password (optional)</Label>
+                  <Input
+                    id="password"
+                    name="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter new password"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="role">Role</Label>
+                  <Select value={profile.role} onValueChange={handleRoleChange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="superadmin">Super Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
           </CardContent>
           <CardFooter className="flex justify-end">
             <Button type="button" variant="outline" className="mr-2" onClick={() => router.push("/admin/profile/view")}>

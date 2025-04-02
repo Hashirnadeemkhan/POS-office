@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { collection, getDocs, query, where, deleteDoc, doc } from "firebase/firestore"
-import { db } from "@/lib/firebase"
+import { adminDb as db } from "@/firebase/client" // Fixed import
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { toast } from "sonner"

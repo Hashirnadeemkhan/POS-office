@@ -2,9 +2,9 @@
 
 import React, { useState, FormEvent } from "react"
 import { Eye, EyeOff } from "lucide-react"
-import { signInWithEmailAndPassword, signOut } from "firebase/auth"
-import { doc, setDoc, getDoc, deleteDoc } from "firebase/firestore"
-import { secondaryAuth, db } from "@/lib/firebase"
+import { signInWithEmailAndPassword } from "firebase/auth"
+import { doc, getDoc, setDoc } from "firebase/firestore"
+import { posAuth, posDb } from "@/firebase/client"
 import { useRouter } from "next/navigation"
 import { v4 as uuidv4 } from "uuid"
 import { useAuth } from "@/lib/auth-context"
@@ -16,21 +16,16 @@ export default function PosLoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const router = useRouter()
-  const { isAuthenticated, logout } = useAuth()
+  const { isAuthenticated, authType } = useAuth()
 
-  // Redirect if already authenticated
   React.useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && authType === "restaurant") {
       router.push("/pos/dashboard")
+    } else if (isAuthenticated && authType === "admin") {
+      // If they're authenticated as admin but trying to access restaurant login
+      // Log them out of admin first (handled in auth context)
     }
-
-    // Cleanup on unmount or page leave
-    return () => {
-      if (isAuthenticated) {
-        logout() // Trigger logout when component unmounts
-      }
-    }
-  }, [isAuthenticated, router, logout])
+  }, [isAuthenticated, authType, router])
 
   const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -38,38 +33,45 @@ export default function PosLoginPage() {
     setIsLoading(true)
 
     try {
-      const userCredential = await signInWithEmailAndPassword(secondaryAuth, email, password)
+      // Sign out from admin auth if it exists to avoid conflicts
+      try {
+        await posAuth.signOut()
+      } catch (e) {
+        // Ignore errors here
+      }
+
+      const userCredential = await signInWithEmailAndPassword(posAuth, email, password)
       const user = userCredential.user
 
-      const restaurantDoc = await getDoc(doc(db, "restaurants", user.uid))
+      const restaurantDoc = await getDoc(doc(posDb, "restaurants", user.uid))
       if (!restaurantDoc.exists()) {
-        throw new Error("Restaurant account not found.")
+        throw new Error("Restaurant account not found")
       }
 
       const restaurantData = restaurantDoc.data()
-      const tokenActivationDate = new Date(restaurantData.tokenActivationDate)
-      const tokenExpiresAt = new Date(restaurantData.tokenExpiresAt)
       const currentDate = new Date()
+      const activationDate = new Date(restaurantData.tokenActivationDate)
+      const expiryDate = new Date(restaurantData.tokenExpiresAt)
 
       if (!restaurantData.isActive) {
-        throw new Error("This account is currently inactive.")
+        throw new Error("Account is inactive")
       }
-      if (currentDate < tokenActivationDate) {
-        throw new Error("This account is not yet active. Activation date: " + tokenActivationDate.toLocaleDateString())
+      if (currentDate < activationDate) {
+        throw new Error(`Account activates on ${activationDate.toLocaleDateString()}`)
       }
-      if (currentDate > tokenExpiresAt) {
-        throw new Error("This account has expired. Expiry date: " + tokenExpiresAt.toLocaleDateString())
+      if (currentDate > expiryDate) {
+        throw new Error(`Account expired on ${expiryDate.toLocaleDateString()}`)
       }
 
       const sessionToken = uuidv4()
-      await setDoc(doc(db, "restaurantSessions", user.uid), {
+      await setDoc(doc(posDb, "restaurantSessions", user.uid), {
         sessionToken,
         email: user.email,
         createdAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       })
+
       localStorage.setItem("restaurantSessionToken", sessionToken)
-      console.log("Restaurant logged in successfully")
       router.push("/pos/dashboard")
     } catch (err: any) {
       console.error("Login error:", err)
@@ -78,6 +80,7 @@ export default function PosLoginPage() {
       setIsLoading(false)
     }
   }
+
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-gray-50">

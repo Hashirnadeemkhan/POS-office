@@ -4,7 +4,7 @@ import React, { useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { Home, Package, User, UserCog, LogOut, ChevronDown, ChevronUp, Users, LayoutDashboard, List } from "lucide-react"
-import { auth, db } from "@/lib/firebase"
+import { adminAuth, posAuth, adminDb, posDb } from "@/firebase/client" // Updated import
 import { doc, deleteDoc } from "firebase/firestore"
 import { useAuth } from "@/lib/auth-context"
 
@@ -47,7 +47,6 @@ const SidebarLink = ({ href, icon: Icon, label, onClick, className = "" }: Sideb
   )
 }
 
-// Sidebar.tsx
 export default function Sidebar() {
   const router = useRouter()
   const pathname = usePathname()
@@ -55,16 +54,25 @@ export default function Sidebar() {
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const { userRole, user } = useAuth()
 
+  const isPosInterface = pathname.startsWith("/pos") || 
+                        pathname.startsWith("/pos/category") || 
+                        pathname.startsWith("/pos/subcategory") || 
+                        pathname.startsWith("/pos/products") || 
+                        pathname === "/pos/dashboard"
+
+  const currentAuth = isPosInterface ? posAuth : adminAuth
+  const currentDb = isPosInterface ? posDb : adminDb
+
   const handleLogout = async () => {
     try {
       setIsLoggingOut(true)
-      const currentUser = auth.currentUser
+      const currentUser = currentAuth.currentUser
       if (currentUser) {
-        await deleteDoc(doc(db, "activeSessions", currentUser.uid))
+        await deleteDoc(doc(currentDb, isPosInterface ? "restaurantSessions" : "activeSessions", currentUser.uid))
       }
-      localStorage.removeItem("sessionToken")
-      await auth.signOut()
-      router.push("/admin/login")
+      localStorage.removeItem(isPosInterface ? "restaurantSessionToken" : "sessionToken")
+      await currentAuth.signOut()
+      router.push(isPosInterface ? "/pos/login" : "/admin/login")
     } catch (error) {
       console.error("Logout error:", error)
     } finally {
@@ -135,10 +143,10 @@ export default function Sidebar() {
   const renderPosSidebar = () => (
     <nav className="px-3 py-2 space-y-1">
       <SidebarLink href="/pos/dashboard" icon={LayoutDashboard} label="Dashboard" />
+      <SidebarLink href="/pos/products" icon={Package} label="Products" />
       <SidebarLink href="/pos" icon={Home} label="POS" />
       <SidebarLink href="/pos/category" icon={List} label="Categories" />
       <SidebarLink href="/pos/subcategory" icon={List} label="Subcategories" />
-      <SidebarLink href="/pos/products" icon={Package} label="Products" />
       <div className="pt-6 mt-6 border-t border-gray-200">
         <SidebarLink
           href="#"
@@ -150,13 +158,6 @@ export default function Sidebar() {
       </div>
     </nav>
   )
-
-  // Determine which sidebar to show based on pathname
-  const isPosInterface = pathname.startsWith("/pos") || 
-                        pathname.startsWith("/pos/category") || 
-                        pathname.startsWith("/pos/subcategory") || 
-                        pathname.startsWith("/posproducts") || 
-                        pathname === "/pos/dashboard"
 
   return (
     <aside className="w-64 bg-white border-r border-gray-200 h-screen sticky top-0 overflow-y-auto">

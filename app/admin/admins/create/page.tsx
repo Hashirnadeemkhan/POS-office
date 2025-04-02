@@ -1,82 +1,64 @@
-"use client"
+"use client";
 
-import React, { useState } from "react"
-import { useRouter } from "next/navigation"
-import { doc, setDoc, serverTimestamp } from "firebase/firestore"
-import { createUserWithEmailAndPassword } from "firebase/auth"
-import { db, secondaryAuth } from "@/lib/firebase" // Use secondaryAuth instead of auth
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { toast } from "sonner"
-import { ArrowLeft, Loader2 } from "lucide-react"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import React, { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+import { ArrowLeft, Loader2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function CreateAdminPage() {
   const [formData, setFormData] = useState({
     name: "",
     email: "",
     password: "",
-    role: "admin", // Default to regular admin
-  })
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const router = useRouter()
+    role: "admin" as "admin" | "superadmin",
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const router = useRouter();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target
-    setFormData((prev) => ({ ...prev, [name]: value }))
-  }
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
 
   const handleRoleChange = (value: "admin" | "superadmin") => {
-    setFormData((prev) => ({ ...prev, role: value }))
-  }
+    setFormData((prev) => ({ ...prev, role: value }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsSubmitting(true)
+    e.preventDefault();
+    setIsSubmitting(true);
 
     try {
-      // Create the user using the secondary Firebase app's auth instance
-      const userCredential = await createUserWithEmailAndPassword(
-        secondaryAuth,
-        formData.email,
-        formData.password
-      )
-      const user = userCredential.user
+      const response = await fetch("/api/create-admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
 
-      // Store the user data in Firestore
-      await setDoc(doc(db, "adminUsers", user.uid), {
-        name: formData.name,
-        email: formData.email,
-        role: formData.role,
-        uid: user.uid,
-        createdAt: serverTimestamp(),
-        lastUpdated: serverTimestamp(),
-      })
+      const result = await response.json();
 
-      // Optionally, sign out the user from the secondary app to clean up
-      await secondaryAuth.signOut()
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to create admin");
+      }
 
-      toast.success("Admin account created successfully")
-      router.push("/admin/admins")
+      toast.success("Admin account created successfully");
+      router.push("/admin/admins");
     } catch (error: any) {
-      console.error("Error creating admin:", error)
-      if (error.code === "auth/email-already-in-use") {
-        toast.error("Email is already in use. Please use a different email.")
+      console.error("Error creating admin:", error);
+      if (error.message.includes("Email is already in use")) {
+        toast.error("Email is already in use. Please use a different email.");
       } else {
-        toast.error("Failed to create admin account: " + error.message)
+        toast.error("Failed to create admin account: " + error.message);
       }
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
-  }
+  };
 
   return (
     <div className="container py-10">
@@ -169,5 +151,5 @@ export default function CreateAdminPage() {
         </form>
       </Card>
     </div>
-  )
+  );
 }

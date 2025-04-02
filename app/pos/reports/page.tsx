@@ -25,8 +25,10 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns"
 import { collection, query, getDocs, where, Timestamp } from "firebase/firestore"
-import { db } from "@/lib/firebase"
+import { posDb } from "@/firebase/client" // Updated import
 import { toast } from "sonner"
+import { posAuth as auth } from "@/firebase/client"; // Fix: Use posAuth and alias as auth
+import { signOut } from "firebase/auth" // Add signOut import
 
 // Types
 interface OrderItem {
@@ -100,9 +102,11 @@ export default function ReportsPage() {
   // Handle sign out
   const handleSignOut = async () => {
     try {
+      await signOut(auth) // Properly sign out using Firebase Auth
       router.replace("/pos/login")
     } catch (error) {
       console.error("Error signing out:", error)
+      toast.error("Failed to sign out")
     }
   }
 
@@ -136,7 +140,7 @@ export default function ReportsPage() {
         const endTimestamp = Timestamp.fromDate(endDate)
 
         const q = query(
-          collection(db, "orders"),
+          collection(posDb, "orders"), // Updated to posDb
           where("createdAt", ">=", startTimestamp),
           where("createdAt", "<=", endTimestamp),
         )
@@ -576,4 +580,3 @@ export default function ReportsPage() {
     </div>
   )
 }
-

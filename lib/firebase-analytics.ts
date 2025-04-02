@@ -1,13 +1,12 @@
-// @/lib/firebase-analytics.js
-"use client"; // Mark this file as client-side only
+// @/lib/firebase-analytics.ts
+"use client";
 
 import { useEffect } from "react";
 import { getAnalytics, isSupported } from "firebase/analytics";
-import { app } from "./firebase"; // Import the app instance
+import { posApp as app } from "@/firebase/client"; // Fix: Import posApp from client config
 
 export function useFirebaseAnalytics() {
   useEffect(() => {
-    // This code only runs in the browser due to useEffect
     isSupported().then((supported) => {
       if (supported) {
         const analytics = getAnalytics(app);
@@ -18,5 +17,5 @@ export function useFirebaseAnalytics() {
     }).catch((error) => {
       console.error("Error initializing Firebase Analytics:", error);
     });
-  }, []); // Empty dependency array ensures it runs once on mount
+  }, []);
 }

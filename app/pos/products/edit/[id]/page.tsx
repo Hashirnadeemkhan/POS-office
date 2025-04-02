@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { PlusCircle, Trash2, ArrowLeft, Upload, X, ImageIcon, Loader2 } from "lucide-react"
@@ -14,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "sonner"
 import { collection, doc, getDoc, getDocs, updateDoc, query, where, addDoc, deleteDoc } from "firebase/firestore"
-import { db } from "@/lib/firebase"
+import { posDb } from "@/firebase/client" // Updated import
 import { saveImage, generateImageId, deleteImage, getImageIdFromUrl } from "@/lib/imageStorage"
 import Image from "next/image"
 
@@ -109,7 +108,7 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
         setIsLoading(true)
 
         // Fetch product data
-        const productDoc = await getDoc(doc(db, "products", productId))
+        const productDoc = await getDoc(doc(posDb, "products", productId)) // Updated to posDb
 
         if (!productDoc.exists()) {
           toast.error("Product not found")
@@ -144,14 +143,14 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
         }
 
         // Fetch variants
-        const variantsQuery = query(collection(db, "variants"), where("product_id", "==", productId))
+        const variantsQuery = query(collection(posDb, "variants"), where("product_id", "==", productId)) // Updated to posDb
         const variantsSnapshot = await getDocs(variantsQuery)
 
         const variantsPromises = variantsSnapshot.docs.map(async (variantDoc) => {
           const variantData = variantDoc.data()
 
           // Fetch attributes for this variant
-          const attributesQuery = query(collection(db, "variant_attributes"), where("variant_id", "==", variantDoc.id))
+          const attributesQuery = query(collection(posDb, "variant_attributes"), where("variant_id", "==", variantDoc.id)) // Updated to posDb
           const attributesSnapshot = await getDocs(attributesQuery)
 
           const attributes = attributesSnapshot.docs.map((attrDoc) => ({
@@ -308,7 +307,6 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
       // Add all attributes to deleted list
       variantToRemove.attributes.forEach((attr) => {
         if (attr.id) {
-          // Use a type assertion to ensure TypeScript knows we're only adding strings
           setDeletedAttributeIds((prev) => [...prev, attr.id as string])
         }
       })
@@ -368,7 +366,6 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
 
     // If it's an existing attribute (has an ID), add to deleted list
     if (attrToRemove.id) {
-      // Use a type assertion to ensure TypeScript knows we're only adding strings
       setDeletedAttributeIds((prev) => [...prev, attrToRemove.id as string])
     }
 
@@ -474,7 +471,7 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
       }
 
       // Update product in Firestore
-      await updateDoc(doc(db, "products", productId), {
+      await updateDoc(doc(posDb, "products", productId), { // Updated to posDb
         name: product.name,
         sku: product.sku,
         base_price: Number.parseFloat(product.base_price),
@@ -489,12 +486,12 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
 
       // Delete removed variants
       for (const variantId of deletedVariantIds) {
-        await deleteDoc(doc(db, "variants", variantId))
+        await deleteDoc(doc(posDb, "variants", variantId)) // Updated to posDb
       }
 
       // Delete removed attributes
       for (const attrId of deletedAttributeIds) {
-        await deleteDoc(doc(db, "variant_attributes", attrId))
+        await deleteDoc(doc(posDb, "variant_attributes", attrId)) // Updated to posDb
       }
 
       // Update or add variants
@@ -523,7 +520,7 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
 
         if (variant.id.startsWith("new-")) {
           // Add new variant
-          variantRef = await addDoc(collection(db, "variants"), {
+          variantRef = await addDoc(collection(posDb, "variants"), { // Updated to posDb
             product_id: productId,
             name: variant.name,
             price: Number.parseFloat(variant.price),
@@ -532,7 +529,7 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
           })
         } else {
           // Update existing variant
-          variantRef = doc(db, "variants", variant.id)
+          variantRef = doc(posDb, "variants", variant.id) // Updated to posDb
           await updateDoc(variantRef, {
             name: variant.name,
             price: Number.parseFloat(variant.price),
@@ -546,14 +543,14 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
           if (attr.id) {
             // Update existing attribute if not in deleted list
             if (!deletedAttributeIds.includes(attr.id)) {
-              await updateDoc(doc(db, "variant_attributes", attr.id), {
+              await updateDoc(doc(posDb, "variant_attributes", attr.id), { // Updated to posDb
                 key_name: attr.key,
                 value_name: attr.value,
               })
             }
           } else {
             // Add new attribute
-            await addDoc(collection(db, "variant_attributes"), {
+            await addDoc(collection(posDb, "variant_attributes"), { // Updated to posDb
               variant_id: variantRef.id,
               key_name: attr.key,
               value_name: attr.value,
@@ -576,7 +573,7 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
       })
 
       toast.success("Product updated successfully")
-      router.push("/products")
+      router.push("/pos/products") // Updated redirect path
     } catch (error) {
       console.error("Error updating product:", error)
       toast.error("Failed to update product")
@@ -1042,4 +1039,3 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
     </div>
   )
 }
-

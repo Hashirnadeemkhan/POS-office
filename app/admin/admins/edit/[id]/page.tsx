@@ -1,19 +1,19 @@
-"use client"
+"use client";
 
-import type React from "react"
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore"
-import { db } from "@/lib/firebase"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { toast } from "sonner"
-import { ArrowLeft, Loader2 } from "lucide-react"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useAuth } from "@/lib/auth-context"
-import { getFunctions, httpsCallable } from "firebase/functions"
+import type React from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { adminAuth, adminDb, adminApp } from "@/firebase/client";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+import { ArrowLeft, Loader2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useAuth } from "@/lib/auth-context";
+import { getFunctions, httpsCallable } from "firebase/functions";
 
 const validatePassword = (password: string) => {
   return {
@@ -21,138 +21,142 @@ const validatePassword = (password: string) => {
     uppercase: /[A-Z]/.test(password),
     number: /[0-9]/.test(password),
     special: /[!@#$%^&*]/.test(password),
-  }
-}
+  };
+};
 
 export default function EditAdminPage({ params }: { params: { id: string } }) {
   const [formData, setFormData] = useState({
     name: "",
     email: "",
     role: "admin",
-  })
-  const [password, setPassword] = useState("")
+  });
+  const [password, setPassword] = useState("");
   const [passwordValidation, setPasswordValidation] = useState({
     length: false,
     uppercase: false,
     number: false,
     special: false,
-  })
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
-  const router = useRouter()
-  const { id } = params
-  const { userRole } = useAuth()
-  const functions = getFunctions()
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter();
+  const { id } = params;
+  const { userRole } = useAuth();
+  const functions = getFunctions(adminApp, "us-central1"); // Specify region explicitly
 
   useEffect(() => {
     if (userRole !== "superadmin") {
-      toast.error("Only Super Admins can edit admin accounts")
-      router.push("/admin/dashboard")
-      return
+      toast.error("Only Super Admins can edit admin accounts");
+      router.push("/admin/dashboard");
+      return;
     }
 
     const fetchAdmin = async () => {
       try {
-        setIsLoading(true)
-        const docRef = doc(db, "adminUsers", id)
-        const docSnap = await getDoc(docRef)
+        setIsLoading(true);
+        const docRef = doc(adminDb, "adminUsers", id);
+        const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
-          const data = docSnap.data()
+          const data = docSnap.data();
           setFormData({
             name: data.name || "",
             email: data.email || "",
             role: data.role || "admin",
-          })
+          });
         } else {
-          toast.error("Admin account not found")
-          router.push("/admin/admins")
+          toast.error("Admin account not found");
+          router.push("/admin/admins");
         }
       } catch (error) {
-        console.error("Error fetching admin:", error)
-        toast.error("Failed to load admin account")
+        console.error("Error fetching admin:", error);
+        toast.error("Failed to load admin account");
       } finally {
-        setIsLoading(false)
+        setIsLoading(false);
       }
-    }
+    };
 
-    fetchAdmin()
-  }, [id, router, userRole])
+    fetchAdmin();
+  }, [id, router, userRole]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target
-    setFormData((prev) => ({ ...prev, [name]: value }))
-  }
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
 
   const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value
-    setPassword(value)
-    setPasswordValidation(validatePassword(value))
-  }
+    const value = e.target.value;
+    setPassword(value);
+    setPasswordValidation(validatePassword(value));
+  };
 
   const handleRoleChange = (value: string) => {
-    setFormData((prev) => ({ ...prev, role: value }))
-  }
+    setFormData((prev) => ({ ...prev, role: value }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
 
     if (password) {
-      const validation = validatePassword(password)
-      const isPasswordValid = Object.values(validation).every(Boolean)
+      const validation = validatePassword(password);
+      const isPasswordValid = Object.values(validation).every(Boolean);
       if (!isPasswordValid) {
-        toast.error("Password must meet all requirements")
-        return
+        toast.error("Password must meet all requirements");
+        return;
       }
     }
 
-    setIsSubmitting(true)
+    setIsSubmitting(true);
 
     try {
-      const docRef = doc(db, "adminUsers", id)
-      const originalDoc = await getDoc(docRef)
-      const originalData = originalDoc.data()
+      const docRef = doc(adminDb, "adminUsers", id);
+      const originalDoc = await getDoc(docRef);
+      const originalData = originalDoc.data();
 
       const updateData: any = {
         name: formData.name,
         role: formData.role,
         lastUpdated: serverTimestamp(),
-      }
+      };
 
       if (formData.email !== originalData?.email) {
-        updateData.email = formData.email
-        // Note: Email updates would also need Admin SDK in production
+        updateData.email = formData.email;
+        // Note: Email updates require Admin SDK; this only updates Firestore
       }
 
       if (password) {
-        const updateAdminPassword = httpsCallable(functions, "updateAdminPassword")
-        await updateAdminPassword({
+        const updateAdminPassword = httpsCallable(functions, "updateAdminPassword");
+        const result = await updateAdminPassword({
           adminId: id,
           newPassword: password,
-        })
-        toast.success("Password updated successfully - old password will no longer work")
+        });
+        if (result.data.success) {
+          toast.success("Password updated successfully - old password will no longer work");
+        } else {
+          throw new Error("Failed to update password");
+        }
       }
 
-      await updateDoc(docRef, updateData)
-      toast.success("Admin account updated successfully")
-      router.push("/admin/admins")
+      await updateDoc(docRef, updateData);
+      toast.success("Admin account updated successfully");
+      router.push("/admin/admins");
     } catch (error: any) {
-      console.error("Error updating admin:", error)
-      toast.error(error.message || "Failed to update admin account")
+      console.error("Error updating admin:", error);
+      toast.error(error.message || "Failed to update admin account");
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
-  }
+  };
 
   if (isLoading) {
     return (
       <div className="container py-10 flex justify-center items-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
-    )
+    );
   }
 
-  const isPasswordValid = password ? Object.values(passwordValidation).every(Boolean) : true
+  const isPasswordValid = password ? Object.values(passwordValidation).every(Boolean) : true;
 
   return (
     <div className="container py-10">
@@ -244,9 +248,9 @@ export default function EditAdminPage({ params }: { params: { id: string } }) {
             </div>
           </CardContent>
           <CardFooter>
-            <Button 
-              type="submit" 
-              className="w-full bg-purple-600 hover:bg-purple-700" 
+            <Button
+              type="submit"
+              className="w-full bg-purple-600 hover:bg-purple-700"
               disabled={isSubmitting || !isPasswordValid}
             >
               {isSubmitting ? (
@@ -262,5 +266,5 @@ export default function EditAdminPage({ params }: { params: { id: string } }) {
         </form>
       </Card>
     </div>
-  )
+  );
 }

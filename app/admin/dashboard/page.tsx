@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { collection, query, orderBy, onSnapshot, doc, getDoc } from "firebase/firestore"
-import { auth, db } from "@/lib/firebase"
+import { adminAuth, adminDb } from "@/firebase/client" // Updated import path
 import RestaurantsTable from "@/src/components/RestaurantsTable"
 import { Building2, Users, UserMinus } from "lucide-react"
 import { onAuthStateChanged } from "firebase/auth"
@@ -17,27 +17,27 @@ export default function Dashboard() {
   const [userName, setUserName] = useState("Admin") // Default value
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    const unsubscribeAuth = onAuthStateChanged(adminAuth, async (user) => {
       if (user) {
-        const adminRef = doc(db, "adminUsers", user.uid);
-        const restaurantRef = doc(db, "restaurants", user.uid);
+        const adminRef = doc(adminDb, "adminUsers", user.uid);
+        const restaurantRef = doc(adminDb, "restaurants", user.uid);
   
         const adminSnap = await getDoc(adminRef);
         if (adminSnap.exists()) {
           const adminData = adminSnap.data();
           const name = adminData.name || "Admin";
           setUserName(name);
-          localStorage.setItem("userName", name); // Use name directly
+          localStorage.setItem("userName", name);
         } else {
           const restaurantSnap = await getDoc(restaurantRef);
           if (restaurantSnap.exists()) {
             const restaurantData = restaurantSnap.data();
             const name = restaurantData.name || restaurantData.ownerName || "Restaurant User";
             setUserName(name);
-            localStorage.setItem("userName", name); // Use name directly
+            localStorage.setItem("userName", name);
           } else {
             setUserName("Unknown User");
-            localStorage.setItem("userName", "Unknown User"); // Use value directly
+            localStorage.setItem("userName", "Unknown User");
           }
         }
       } else {
@@ -46,7 +46,7 @@ export default function Dashboard() {
       }
     });
   
-    const restaurantsRef = collection(db, "restaurants");
+    const restaurantsRef = collection(adminDb, "restaurants");
     const q = query(restaurantsRef, orderBy("createdAt", "desc"));
   
     const unsubscribeSnapshot = onSnapshot(q, (querySnapshot) => {
@@ -78,7 +78,7 @@ export default function Dashboard() {
       unsubscribeAuth();
       unsubscribeSnapshot();
     };
-  }, []); // No need to add userName
+  }, []);
 
   // Calculate percentages for progress bars
   const activePercentage = stats.total > 0 ? (stats.active / stats.total) * 100 : 0

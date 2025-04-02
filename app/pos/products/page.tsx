@@ -1,105 +1,105 @@
-"use client";
+"use client"
 
-import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { PlusCircle, Pencil, Trash2, ChevronDown, ChevronUp, ImageIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { collection, query, getDocs, deleteDoc, doc, where, orderBy, onSnapshot } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { toast } from "sonner";
-import { DeleteProductDialog } from "@/src/components/DeleteProductDialog";
-import { deleteImage, getImageIdFromUrl } from "@/lib/imageStorage";
-import Image from "next/image";
+import React, { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { PlusCircle, Pencil, Trash2, ChevronDown, ChevronUp, ImageIcon } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { collection, query, getDocs, deleteDoc, doc, where, orderBy, onSnapshot } from "firebase/firestore"
+import { posDb } from "@/firebase/client" // Updated import
+import { toast } from "sonner"
+import { DeleteProductDialog } from "@/src/components/DeleteProductDialog"
+import { deleteImage, getImageIdFromUrl } from "@/lib/imageStorage"
+import Image from "next/image"
 
 // Define interfaces for our data
 interface VariantAttribute {
-  id: string;
-  key_name: string;
-  value_name: string;
+  id: string
+  key_name: string
+  value_name: string
 }
 
 interface Variant {
-  id: string;
-  name: string;
-  price: number;
-  stock: number;
-  attributes: VariantAttribute[];
-  image_url?: string;
+  id: string
+  name: string
+  price: number
+  stock: number
+  attributes: VariantAttribute[]
+  image_url?: string
 }
 
 interface Product {
-  id: string;
-  name: string;
-  sku: string;
-  base_price?: number;
-  description?: string;
-  status?: "active" | "inactive";
-  category?: string;
-  subcategory?: string;
-  variants: Variant[];
-  main_image_url?: string;
-  gallery_images?: string[];
+  id: string
+  name: string
+  sku: string
+  base_price?: number
+  description?: string
+  status?: "active" | "inactive"
+  category?: string
+  subcategory?: string
+  variants: Variant[]
+  main_image_url?: string
+  gallery_images?: string[]
 }
 
 interface Category {
-  id: string;
-  name: string;
+  id: string
+  name: string
 }
 
 interface Subcategory {
-  id: string;
-  name: string;
-  categoryId: string;
+  id: string
+  name: string
+  categoryId: string
 }
 
 export default function ProductsPage() {
-  const router = useRouter();
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterCategory, setFilterCategory] = useState("all");
-  const [filterSubcategory, setFilterSubcategory] = useState("all");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean>>({});
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const router = useRouter()
+  const [products, setProducts] = useState<Product[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
+  const [subcategories, setSubcategories] = useState<Subcategory[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [filterCategory, setFilterCategory] = useState("all")
+  const [filterSubcategory, setFilterSubcategory] = useState("all")
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean>>({})
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
 
-  const ITEMS_PER_PAGE = 10;
+  const ITEMS_PER_PAGE = 10
 
   // Toggle product expansion
   const toggleProductExpand = (productId: string) => {
     setExpandedProducts((prev) => ({
       ...prev,
       [productId]: !prev[productId],
-    }));
-  };
+    }))
+  }
 
   // Fetch categories
   useEffect(() => {
-    const q = query(collection(db, "categories"), orderBy("name"));
+    const q = query(collection(posDb, "categories"), orderBy("name")) // Updated to posDb
     const unsubscribe = onSnapshot(
       q,
       (querySnapshot) => {
         const categoriesList = querySnapshot.docs.map((doc) => ({
           id: doc.id,
           name: doc.data().name,
-        }));
-        setCategories(categoriesList);
+        }))
+        setCategories(categoriesList)
       },
       (error) => {
-        console.error("Error fetching categories:", error);
-        toast.error("Failed to load categories.");
+        console.error("Error fetching categories:", error)
+        toast.error("Failed to load categories.")
       }
-    );
-    return () => unsubscribe();
-  }, []);
+    )
+    return () => unsubscribe()
+  }, [])
 
   // Fetch subcategories
   useEffect(() => {
-    const q = query(collection(db, "subcategories"), orderBy("name"));
+    const q = query(collection(posDb, "subcategories"), orderBy("name")) // Updated to posDb
     const unsubscribe = onSnapshot(
       q,
       (querySnapshot) => {
@@ -107,58 +107,58 @@ export default function ProductsPage() {
           id: doc.id,
           name: doc.data().name,
           categoryId: doc.data().categoryId,
-        }));
-        setSubcategories(subcategoriesList);
+        }))
+        setSubcategories(subcategoriesList)
       },
       (error) => {
-        console.error("Error fetching subcategories:", error);
-        toast.error("Failed to load subcategories.");
+        console.error("Error fetching subcategories:", error)
+        toast.error("Failed to load subcategories.")
       }
-    );
-    return () => unsubscribe();
-  }, []);
+    )
+    return () => unsubscribe()
+  }, [])
 
   // Fetch products, variants, and attributes
   useEffect(() => {
     const fetchProducts = async () => {
-      setIsLoading(true);
+      setIsLoading(true)
       try {
-        let q = query(collection(db, "products"), orderBy("name"));
+        let q = query(collection(posDb, "products"), orderBy("name")) // Updated to posDb
 
         if (filterCategory && filterCategory !== "all") {
-          q = query(q, where("category", "==", filterCategory));
+          q = query(q, where("category", "==", filterCategory))
         }
 
         if (filterSubcategory && filterSubcategory !== "all") {
-          q = query(q, where("subcategory", "==", filterSubcategory));
+          q = query(q, where("subcategory", "==", filterSubcategory))
         }
 
         const unsubscribe = onSnapshot(
           q,
           async (querySnapshot) => {
-            const productsData: Product[] = [];
+            const productsData: Product[] = []
 
             for (const docSnapshot of querySnapshot.docs) {
-              const productData = docSnapshot.data();
+              const productData = docSnapshot.data()
 
               // Fetch variants for this product
-              const variantsQuery = query(collection(db, "variants"), where("product_id", "==", docSnapshot.id));
-              const variantsSnapshot = await getDocs(variantsQuery);
-              const variants: Variant[] = [];
+              const variantsQuery = query(collection(posDb, "variants"), where("product_id", "==", docSnapshot.id)) // Updated to posDb
+              const variantsSnapshot = await getDocs(variantsQuery)
+              const variants: Variant[] = []
 
               for (const variantDoc of variantsSnapshot.docs) {
-                const variantData = variantDoc.data();
+                const variantData = variantDoc.data()
 
                 // Fetch attributes for this variant
                 const attributesQuery = query(
-                  collection(db, "variant_attributes"),
+                  collection(posDb, "variant_attributes"), // Updated to posDb
                   where("variant_id", "==", variantDoc.id)
-                );
-                const attributesSnapshot = await getDocs(attributesQuery);
+                )
+                const attributesSnapshot = await getDocs(attributesQuery)
                 const attributes = attributesSnapshot.docs.map((attrDoc) => ({
                   id: attrDoc.id,
                   ...attrDoc.data(),
-                })) as VariantAttribute[];
+                })) as VariantAttribute[]
 
                 variants.push({
                   id: variantDoc.id,
@@ -167,7 +167,7 @@ export default function ProductsPage() {
                   stock: variantData.stock || 0,
                   attributes,
                   image_url: variantData.image_url || "",
-                });
+                })
               }
 
               productsData.push({
@@ -182,29 +182,29 @@ export default function ProductsPage() {
                 variants,
                 main_image_url: productData.main_image_url || "",
                 gallery_images: productData.gallery_images || [],
-              });
+              })
             }
 
-            setProducts(productsData);
-            setIsLoading(false);
+            setProducts(productsData)
+            setIsLoading(false)
           },
           (error) => {
-            console.error("Error fetching products:", error);
-            toast.error("Failed to load products");
-            setIsLoading(false);
+            console.error("Error fetching products:", error)
+            toast.error("Failed to load products")
+            setIsLoading(false)
           }
-        );
+        )
 
-        return () => unsubscribe();
+        return () => unsubscribe()
       } catch (error) {
-        console.error("Error setting up products listener:", error);
-        toast.error("Failed to set up products listener.");
-        setIsLoading(false);
+        console.error("Error setting up products listener:", error)
+        toast.error("Failed to set up products listener.")
+        setIsLoading(false)
       }
-    };
+    }
 
-    fetchProducts();
-  }, [filterCategory, filterSubcategory]);
+    fetchProducts()
+  }, [filterCategory, filterSubcategory])
 
   // Handle product deletion
   const handleDeleteProduct = async () => {
@@ -213,63 +213,63 @@ export default function ProductsPage() {
         // Delete all variant attributes and images
         for (const variant of selectedProduct.variants) {
           if (variant.image_url) {
-            await deleteImage(getImageIdFromUrl(variant.image_url) || "");
+            await deleteImage(getImageIdFromUrl(variant.image_url) || "")
           }
 
-          const attributesQuery = query(collection(db, "variant_attributes"), where("variant_id", "==", variant.id));
-          const attributesSnapshot = await getDocs(attributesQuery);
+          const attributesQuery = query(collection(posDb, "variant_attributes"), where("variant_id", "==", variant.id)) // Updated to posDb
+          const attributesSnapshot = await getDocs(attributesQuery)
 
           for (const attrDoc of attributesSnapshot.docs) {
-            await deleteDoc(doc(db, "variant_attributes", attrDoc.id));
+            await deleteDoc(doc(posDb, "variant_attributes", attrDoc.id)) // Updated to posDb
           }
 
-          await deleteDoc(doc(db, "variants", variant.id));
+          await deleteDoc(doc(posDb, "variants", variant.id)) // Updated to posDb
         }
 
         // Delete product images
         if (selectedProduct.main_image_url) {
-          await deleteImage(getImageIdFromUrl(selectedProduct.main_image_url) || "");
+          await deleteImage(getImageIdFromUrl(selectedProduct.main_image_url) || "")
         }
 
         if (selectedProduct.gallery_images && selectedProduct.gallery_images.length > 0) {
           for (const imageUrl of selectedProduct.gallery_images) {
-            await deleteImage(getImageIdFromUrl(imageUrl) || "");
+            await deleteImage(getImageIdFromUrl(imageUrl) || "")
           }
         }
 
         // Delete the product
-        await deleteDoc(doc(db, "products", selectedProduct.id));
+        await deleteDoc(doc(posDb, "products", selectedProduct.id)) // Updated to posDb
 
-        setProducts(products.filter((p) => p.id !== selectedProduct.id));
-        toast.success(`${selectedProduct.name} has been deleted`);
-        setIsDeleteDialogOpen(false);
+        setProducts(products.filter((p) => p.id !== selectedProduct.id))
+        toast.success(`${selectedProduct.name} has been deleted`)
+        setIsDeleteDialogOpen(false)
       } catch (error) {
-        console.error("Error deleting product:", error);
-        toast.error("Failed to delete product");
+        console.error("Error deleting product:", error)
+        toast.error("Failed to delete product")
       }
     }
-  };
+  }
 
   // Filter and paginate products
   const filteredProducts = products.filter(
     (product) =>
       product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       product.sku.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  )
 
   // Update total pages whenever filtered products change
   useEffect(() => {
-    setTotalPages(Math.ceil(filteredProducts.length / ITEMS_PER_PAGE));
+    setTotalPages(Math.ceil(filteredProducts.length / ITEMS_PER_PAGE))
     // Reset to first page if current page exceeds total pages after filtering
     if (currentPage > Math.ceil(filteredProducts.length / ITEMS_PER_PAGE)) {
-      setCurrentPage(1);
+      setCurrentPage(1)
     }
-  }, [filteredProducts, currentPage]);
+  }, [filteredProducts, currentPage])
 
   const paginatedProducts = filteredProducts.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
-  );
+  )
 
   return (
     <div className="flex flex-col h-screen">
@@ -413,8 +413,8 @@ export default function ProductsPage() {
                               variant="ghost"
                               size="sm"
                               onClick={() => {
-                                setSelectedProduct(product);
-                                setIsDeleteDialogOpen(true);
+                                setSelectedProduct(product)
+                                setIsDeleteDialogOpen(true)
                               }}
                               className="text-red-600"
                             >
@@ -540,5 +540,5 @@ export default function ProductsPage() {
         productName={selectedProduct?.name || ""}
       />
     </div>
-  );
+  )
 }
