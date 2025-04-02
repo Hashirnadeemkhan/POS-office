@@ -238,7 +238,7 @@ export default function ViewRestaurantPage({ params }: { params: { id: string } 
             <Button
               variant="outline"
               className="border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
-              onClick={() => router.push(`/admin/restaurants/${restaurant.id}/edit`)}
+              onClick={() => router.push(`/admin/restaurants//edit/${restaurant.id}`)}
             >
               <Pencil className="mr-2 h-4 w-4" />
               Edit
