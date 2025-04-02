@@ -1,24 +1,22 @@
-"use client"
+"use client";
 
-import React, { useState } from "react"
-import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
-import { Home, Package, User, UserCog, LogOut, ChevronDown, ChevronUp, Users, LayoutDashboard, List } from "lucide-react"
-import { adminAuth, posAuth, adminDb, posDb } from "@/firebase/client" // Updated import
-import { doc, deleteDoc } from "firebase/firestore"
-import { useAuth } from "@/lib/auth-context"
+import React, { useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { Home, Package, User, UserCog, LogOut, ChevronDown, ChevronUp, Users, LayoutDashboard, List } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
 
 interface SidebarLinkProps {
-  href: string
-  icon: React.ElementType
-  label: string
-  onClick?: () => Promise<void> | void
-  className?: string
+  href: string;
+  icon: React.ElementType;
+  label: string;
+  onClick?: () => Promise<void> | void;
+  className?: string;
 }
 
 const SidebarLink = ({ href, icon: Icon, label, onClick, className = "" }: SidebarLinkProps) => {
-  const pathname = usePathname()
-  const isActive = pathname === href
+  const pathname = usePathname();
+  const isActive = pathname === href;
 
   if (onClick) {
     return (
@@ -31,7 +29,7 @@ const SidebarLink = ({ href, icon: Icon, label, onClick, className = "" }: Sideb
         <Icon size={20} />
         <span>{label}</span>
       </button>
-    )
+    );
   }
 
   return (
@@ -44,43 +42,36 @@ const SidebarLink = ({ href, icon: Icon, label, onClick, className = "" }: Sideb
       <Icon size={20} />
       <span>{label}</span>
     </Link>
-  )
-}
+  );
+};
 
 export default function Sidebar() {
-  const router = useRouter()
-  const pathname = usePathname()
-  const [isLoggingOut, setIsLoggingOut] = useState(false)
-  const [isProfileOpen, setIsProfileOpen] = useState(false)
-  const { userRole, user } = useAuth()
+  const router = useRouter();
+  const pathname = usePathname();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const { userRole, logout } = useAuth(); // Use logout from useAuth
 
-  const isPosInterface = pathname.startsWith("/pos") || 
-                        pathname.startsWith("/pos/category") || 
-                        pathname.startsWith("/pos/subcategory") || 
-                        pathname.startsWith("/pos/products") || 
-                        pathname === "/pos/dashboard"
-
-  const currentAuth = isPosInterface ? posAuth : adminAuth
-  const currentDb = isPosInterface ? posDb : adminDb
+  const isPosInterface =
+    pathname.startsWith("/pos") ||
+    pathname.startsWith("/pos/category") ||
+    pathname.startsWith("/pos/subcategory") ||
+    pathname.startsWith("/pos/products") ||
+    pathname === "/pos/dashboard";
 
   const handleLogout = async () => {
     try {
-      setIsLoggingOut(true)
-      const currentUser = currentAuth.currentUser
-      if (currentUser) {
-        await deleteDoc(doc(currentDb, isPosInterface ? "restaurantSessions" : "activeSessions", currentUser.uid))
-      }
-      localStorage.removeItem(isPosInterface ? "restaurantSessionToken" : "sessionToken")
-      await currentAuth.signOut()
-      router.push(isPosInterface ? "/pos/login" : "/admin/login")
+      setIsLoggingOut(true);
+      await logout(); // Call the logout function from useAuth
+      // No need to manually redirect here; useAuth handles it
     } catch (error) {
-      console.error("Logout error:", error)
+      console.error("Logout error:", error);
     } finally {
-      setIsLoggingOut(false)
+      setIsLoggingOut(false);
     }
-  }
+  };
 
-  const toggleProfileMenu = () => setIsProfileOpen(!isProfileOpen)
+  const toggleProfileMenu = () => setIsProfileOpen(!isProfileOpen);
 
   const renderAdminSidebar = () => (
     <nav className="px-3 py-2 space-y-1">
@@ -138,7 +129,7 @@ export default function Sidebar() {
         />
       </div>
     </nav>
-  )
+  );
 
   const renderPosSidebar = () => (
     <nav className="px-3 py-2 space-y-1">
@@ -157,7 +148,7 @@ export default function Sidebar() {
         />
       </div>
     </nav>
-  )
+  );
 
   return (
     <aside className="w-64 bg-white border-r border-gray-200 h-screen sticky top-0 overflow-y-auto">
@@ -166,5 +157,5 @@ export default function Sidebar() {
       </div>
       {isPosInterface ? renderPosSidebar() : renderAdminSidebar()}
     </aside>
-  )
+  );
 }

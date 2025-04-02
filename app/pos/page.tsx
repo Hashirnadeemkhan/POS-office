@@ -16,6 +16,9 @@ import {
   CreditCard,
   DollarSign,
   Wallet,
+  Menu,
+  X,
+  ShoppingCart,
 } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -30,8 +33,9 @@ import {
 } from "@/components/ui/dialog"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
+import { Drawer, DrawerContent, DrawerTrigger } from "@/components/ui/drawer"
 import { collection, query, getDocs, orderBy, addDoc, serverTimestamp, doc, getDoc } from "firebase/firestore"
-import {  posDb } from "@/firebase/client" // Added posDb
+import { posDb } from "@/firebase/client"
 import { useAuth } from "@/lib/auth-context"
 import { toast } from "sonner"
 
@@ -77,7 +81,7 @@ interface Order {
 }
 
 export default function POS() {
-  const { logout, userId } = useAuth() // Added userId from useAuth
+  const { logout, userId } = useAuth()
   const router = useRouter()
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -97,6 +101,8 @@ export default function POS() {
   const [showNewOrderModal, setShowNewOrderModal] = useState(false)
   const [customerName, setCustomerName] = useState("")
   const [customerPhone, setCustomerPhone] = useState("")
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [cartOpen, setCartOpen] = useState(false)
   const [restaurantDetails, setRestaurantDetails] = useState({
     name: "RESTAURANT NAME",
     address: "123 Main Street, City",
@@ -127,7 +133,7 @@ export default function POS() {
   }
 
   const fetchRestaurantData = useCallback(async () => {
-    if (!userId) return // Use userId from auth context
+    if (!userId) return
     try {
       const restaurantRef = doc(posDb, "restaurants", userId)
       const restaurantSnap = await getDoc(restaurantRef)
@@ -286,6 +292,7 @@ export default function POS() {
       return
     }
     setShowPaymentModal(true)
+    setCartOpen(false)
   }
 
   const handleCompleteOrder = async () => {
@@ -657,227 +664,403 @@ export default function POS() {
     }
   }
 
-  return (
-    <div className="min-h-screen bg-white flex">
-      <div className="flex-1">
-        <header className="flex items-center justify-between px-4 py-2 border-b">
-          <div className="flex items-center gap-2">
-            <div className="bg-purple-600 text-white p-2 rounded-lg">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9Z"></path>
-                <path d="m3 9 2.45-4.9A2 2 0 0 1 7.24 3h9.52a2 2 0 0 1 1.8 1.1L21 9"></path>
-                <path d="M12 3v6"></path>
-              </svg>
-            </div>
-            <div>
-              <h1 className="font-bold text-lg text-purple-600">POS</h1>
-              <p className="text-xs text-gray-500">Easy handle sale</p>
-            </div>
-          </div>
-          <nav className="flex items-center gap-6">
-            <Link href="/pos" className="flex flex-col items-center text-purple-600">
-              <Home size={20} />
-              <span className="text-xs">Home</span>
-            </Link>
-            <Link href="/pos/order-list" className="flex flex-col items-center text-gray-500">
-              <ClipboardList size={20} />
-              <span className="text-xs">Order List</span>
-            </Link>
-            <Link href="/pos/history" className="flex flex-col items-center text-gray-500">
-              <History size={20} />
-              <span className="text-xs">History</span>
-            </Link>
-            <Link href="/pos/reports" className="flex flex-col items-center text-gray-500">
-              <BarChart2 size={20} />
-              <span className="text-xs">Report</span>
-            </Link>
-          </nav>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-sm text-purple-600">{formattedDate}</p>
-              <p className="text-sm">{formattedTime}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 font-bold">
-                U
-              </div>
-              <div>
-                <p className="text-sm font-medium">User</p>
-                <p className="text-xs text-gray-500">Cashier Staff</p>
-              </div>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleSignOut}
-              className="text-gray-500 hover:text-red-500"
-              title="Sign Out"
-            >
-              <LogOut size={20} />
-            </Button>
-          </div>
-        </header>
+  const itemCount = orderItems.reduce((total, item) => total + item.quantity, 0)
 
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="relative w-96">
-            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-            <Input
-              type="text"
-              placeholder="Search menu here..."
-              className="w-full pl-8 pr-4 py-2 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
+  return (
+    <div className="min-h-screen bg-white flex flex-col">
+      {/* Mobile Header */}
+      <header className="lg:hidden flex items-center justify-between px-4 py-3 border-b bg-white sticky top-0 z-10">
+        <div className="flex items-center gap-2">
+          <div className="bg-purple-600 text-white p-2 rounded-lg">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9Z"></path>
+              <path d="m3 9 2.45-4.9A2 2 0 0 1 7.24 3h9.52a2 2 0 0 1 1.8 1.1L21 9"></path>
+              <path d="M12 3v6"></path>
+            </svg>
           </div>
-          <Button
-            onClick={() => {
-              setShowNewOrderModal(true)
-            }}
-            className="bg-purple-600 text-white px-6 py-2 rounded-full hover:bg-purple-700 transition-colors"
-          >
-            New Order
+          <div>
+            <h1 className="font-bold text-lg text-purple-600">POS</h1>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Drawer open={cartOpen} onOpenChange={setCartOpen}>
+            <DrawerTrigger asChild>
+              <Button variant="ghost" size="icon" className="relative">
+                <ShoppingCart size={20} />
+                {itemCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                    {itemCount}
+                  </span>
+                )}
+              </Button>
+            </DrawerTrigger>
+            <DrawerContent className="h-[80vh] p-4 flex flex-col">
+              <h2 className="text-xl font-bold mb-4">Order Summary</h2>
+              {orderItems.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <p className="text-gray-500">No items added yet</p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex-1 overflow-y-auto">
+                    {orderItems.map((item, index) => (
+                      <div key={index} className="flex justify-between items-center mb-4 border-b pb-2">
+                        <div>
+                          <p className="font-medium">{item.name}</p>
+                          <p className="text-sm text-gray-500">
+                            Rs {item.price.toLocaleString()} x {item.quantity}
+                          </p>
+                        </div>
+                        <p className="font-bold">Rs {(item.price * item.quantity).toLocaleString()}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 border-t pt-4">
+                    <div className="flex justify-between mb-2">
+                      <p className="text-gray-600">Subtotal</p>
+                      <p className="font-medium">Rs {subtotal.toLocaleString()}</p>
+                    </div>
+                    <div className="flex justify-between mb-2">
+                      <p className="text-gray-600">Tax (10%)</p>
+                      <p className="font-medium">Rs {tax.toLocaleString()}</p>
+                    </div>
+                    <div className="flex justify-between mb-4">
+                      <p className="font-bold">Total</p>
+                      <p className="font-bold text-lg">Rs {total.toLocaleString()}</p>
+                    </div>
+                    <Button
+                      className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-lg"
+                      onClick={handlePayment}
+                    >
+                      Place Order
+                    </Button>
+                  </div>
+                </>
+              )}
+            </DrawerContent>
+          </Drawer>
+
+          <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+            {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
           </Button>
         </div>
+      </header>
 
-        <div className="flex gap-2 px-4 mb-6 overflow-x-auto">
-          {categories.map((category) => (
-            <div
-              key={category.id}
-              onClick={() => {
-                setIsLoading(true)
-                setSelectedCategory(category.id)
-              }}
-              className={`flex flex-col items-center p-2 rounded-lg cursor-pointer transition-colors ${
-                selectedCategory === category.id ? "border-2 border-purple-600" : "border border-gray-200"
-              }`}
+      {/* Mobile Menu */}
+      {mobileMenuOpen && (
+        <div className="lg:hidden fixed inset-0 bg-white z-20 pt-16">
+          <div className="p-4 flex flex-col gap-4">
+            <Link href="/pos" className="flex items-center gap-2 p-3 rounded-lg bg-purple-100 text-purple-600">
+              <Home size={20} />
+              <span>Home</span>
+            </Link>
+            <Link
+              href="/pos/order-list"
+              className="flex items-center gap-2 p-3 rounded-lg text-gray-700 hover:bg-gray-100"
             >
-              {getCategoryIcon(category.icon)}
-              <p
-                className={`text-sm mt-1 ${selectedCategory === category.id ? "text-purple-600 font-medium" : "text-gray-700"}`}
-              >
-                {category.name}
-              </p>
-              <p className="text-xs text-gray-500">{category.itemCount} items</p>
-            </div>
-          ))}
-        </div>
+              <ClipboardList size={20} />
+              <span>Order List</span>
+            </Link>
+            <Link
+              href="/pos/history"
+              className="flex items-center gap-2 p-3 rounded-lg text-gray-700 hover:bg-gray-100"
+            >
+              <History size={20} />
+              <span>History</span>
+            </Link>
+            <Link
+              href="/pos/reports"
+              className="flex items-center gap-2 p-3 rounded-lg text-gray-700 hover:bg-gray-100"
+            >
+              <BarChart2 size={20} />
+              <span>Report</span>
+            </Link>
 
-        <div
-          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-3 gap-4 px-4 pb-8 overflow-y-auto"
-          style={{ maxHeight: "calc(100vh - 250px)" }}
-        >
-          {isLoading ? (
-            <div className="col-span-full flex justify-center items-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
-            </div>
-          ) : filteredProducts.length === 0 ? (
-            <div className="col-span-full text-center py-12">
-              <p className="text-gray-500">No products found</p>
-            </div>
-          ) : (
-            filteredProducts.map((product) => (
-              <div key={product.id} className="border rounded-lg overflow-hidden">
-                <div className="relative h-40">
-                  <Image
-                    src={product.main_image_url || "/placeholder.svg?height=160&width=160"}
-                    alt={product.name}
-                    fill
-                    className="object-contain"
-                  />
+            <div className="mt-auto pt-4 border-t">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 font-bold">
+                  U
                 </div>
-                <div className="p-3">
-                  <h3 className="font-medium text-gray-900 line-clamp-1">{product.name}</h3>
-                  <div className="flex gap-2 mt-1">
-                    <div className="text-xs px-2 py-1 rounded-full inline-block bg-green-100 text-green-800">
-                      Available
-                    </div>
-                    <div className="text-xs px-2 py-1 rounded-full inline-block bg-purple-100 text-purple-800">
-                      {product.category || "Uncategorized"}
-                    </div>
-                  </div>
-                  <p className="font-bold text-gray-900 mt-2">Rs {product.base_price.toLocaleString()}</p>
-                  <div className="flex items-center justify-between mt-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleQuantityChange(product.id, -1)}
-                      className="text-purple-600 p-1 rounded-md hover:bg-purple-100"
-                      disabled={quantities[product.id] === 0}
-                    >
-                      <MinusCircle size={20} />
-                    </Button>
-                    <span className="font-medium">{quantities[product.id] || 0}</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleQuantityChange(product.id, 1)}
-                      className="text-purple-600 p-1 rounded-md hover:bg-purple-100"
-                    >
-                      <PlusCircle size={20} />
-                    </Button>
-                  </div>
+                <div>
+                  <p className="text-sm font-medium">User</p>
+                  <p className="text-xs text-gray-500">Cashier Staff</p>
                 </div>
               </div>
-            ))
+              <Button
+                variant="outline"
+                className="w-full flex items-center gap-2 text-red-500 border-red-200"
+                onClick={handleSignOut}
+              >
+                <LogOut size={18} />
+                <span>Sign Out</span>
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Desktop Header */}
+      <header className="hidden lg:flex items-center justify-between px-6 py-3 border-b">
+        <div className="flex items-center gap-2">
+          <div className="bg-purple-600 text-white p-2 rounded-lg">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9Z"></path>
+              <path d="m3 9 2.45-4.9A2 2 0 0 1 7.24 3h9.52a2 2 0 0 1 1.8 1.1L21 9"></path>
+              <path d="M12 3v6"></path>
+            </svg>
+          </div>
+          <div>
+            <h1 className="font-bold text-lg text-purple-600">POS</h1>
+            <p className="text-xs text-gray-500">Easy handle sale</p>
+          </div>
+        </div>
+        <nav className="flex items-center gap-6">
+          <Link href="/pos" className="flex flex-col items-center text-purple-600">
+            <Home size={20} />
+            <span className="text-xs">Home</span>
+          </Link>
+          <Link
+            href="/pos/order-list"
+            className="flex flex-col items-center text-gray-500 hover:text-purple-600 transition-colors"
+          >
+            <ClipboardList size={20} />
+            <span className="text-xs">Order List</span>
+          </Link>
+          <Link
+            href="/pos/history"
+            className="flex flex-col items-center text-gray-500 hover:text-purple-600 transition-colors"
+          >
+            <History size={20} />
+            <span className="text-xs">History</span>
+          </Link>
+          <Link
+            href="/pos/reports"
+            className="flex flex-col items-center text-gray-500 hover:text-purple-600 transition-colors"
+          >
+            <BarChart2 size={20} />
+            <span className="text-xs">Report</span>
+          </Link>
+        </nav>
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <p className="text-sm text-purple-600">{formattedDate}</p>
+            <p className="text-sm">{formattedTime}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 font-bold">
+              U
+            </div>
+            <div>
+              <p className="text-sm font-medium">User</p>
+              <p className="text-xs text-gray-500">Cashier Staff</p>
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleSignOut}
+            className="text-gray-500 hover:text-red-500"
+            title="Sign Out"
+          >
+            <LogOut size={20} />
+          </Button>
+        </div>
+      </header>
+
+      <div className="flex flex-col lg:flex-row flex-1">
+        <div className="flex-1">
+          <div className="flex flex-col md:flex-row md:items-center justify-between px-4 py-3 gap-3">
+            <div className="relative w-full md:w-96">
+              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+              <Input
+                type="text"
+                placeholder="Search menu here..."
+                className="w-full pl-8 pr-4 py-2 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            <Button
+              onClick={() => {
+                setShowNewOrderModal(true)
+              }}
+              className="bg-purple-600 text-white px-6 py-2 rounded-full hover:bg-purple-700 transition-colors"
+            >
+              New Order
+            </Button>
+          </div>
+
+          <div className="flex gap-2 px-4 mb-4 overflow-x-auto pb-2">
+            {categories.map((category) => (
+              <div
+                key={category.id}
+                onClick={() => {
+                  setIsLoading(true)
+                  setSelectedCategory(category.id)
+                }}
+                className={`flex flex-col items-center p-2 rounded-lg cursor-pointer transition-colors min-w-[80px] ${
+                  selectedCategory === category.id ? "border-2 border-purple-600" : "border border-gray-200"
+                }`}
+              >
+                {getCategoryIcon(category.icon)}
+                <p
+                  className={`text-sm mt-1 text-center ${selectedCategory === category.id ? "text-purple-600 font-medium" : "text-gray-700"}`}
+                >
+                  {category.name}
+                </p>
+                <p className="text-xs text-gray-500">{category.itemCount} items</p>
+              </div>
+            ))}
+          </div>
+
+          <div
+            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-4 px-4 pb-8 overflow-y-auto"
+            style={{ maxHeight: "calc(100vh - 250px)" }}
+          >
+            {isLoading ? (
+              <div className="col-span-full flex justify-center items-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+              </div>
+            ) : filteredProducts.length === 0 ? (
+              <div className="col-span-full text-center py-12">
+                <p className="text-gray-500">No products found</p>
+              </div>
+            ) : (
+              filteredProducts.map((product) => (
+                <div
+                  key={product.id}
+                  className="border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow"
+                >
+                  <div className="relative h-32 sm:h-40">
+                    <Image
+                      src={product.main_image_url || "/placeholder.svg?height=160&width=160"}
+                      alt={product.name}
+                      fill
+                      className="object-contain"
+                    />
+                  </div>
+                  <div className="p-3">
+                    <h3 className="font-medium text-gray-900 line-clamp-1">{product.name}</h3>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      <div className="text-xs px-2 py-1 rounded-full inline-block bg-green-100 text-green-800">
+                        Available
+                      </div>
+                      <div className="text-xs px-2 py-1 rounded-full inline-block bg-purple-100 text-purple-800">
+                        {product.category || "Uncategorized"}
+                      </div>
+                    </div>
+                    <p className="font-bold text-gray-900 mt-2">Rs {product.base_price.toLocaleString()}</p>
+                    <div className="flex items-center justify-between mt-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleQuantityChange(product.id, -1)}
+                        className="text-purple-600 p-1 rounded-md hover:bg-purple-100"
+                        disabled={quantities[product.id] === 0}
+                      >
+                        <MinusCircle size={20} />
+                      </Button>
+                      <span className="font-medium">{quantities[product.id] || 0}</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleQuantityChange(product.id, 1)}
+                        className="text-purple-600 p-1 rounded-md hover:bg-purple-100"
+                      >
+                        <PlusCircle size={20} />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Desktop Order Summary */}
+        <div className="hidden lg:flex w-96 border-l bg-gray-50 p-4 flex-col h-[calc(100vh-64px)] sticky top-[64px]">
+          <h2 className="text-xl font-bold mb-4">Order Summary</h2>
+          {orderItems.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center">
+              <p className="text-gray-500">No items added yet</p>
+            </div>
+          ) : (
+            <>
+              <div className="flex-1 overflow-y-auto">
+                {orderItems.map((item, index) => (
+                  <div key={index} className="flex justify-between items-center mb-4 border-b pb-2">
+                    <div>
+                      <p className="font-medium">{item.name}</p>
+                      <p className="text-sm text-gray-500">
+                        Rs {item.price.toLocaleString()} x {item.quantity}
+                      </p>
+                    </div>
+                    <p className="font-bold">Rs {(item.price * item.quantity).toLocaleString()}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 border-t pt-4">
+                <div className="flex justify-between mb-2">
+                  <p className="text-gray-600">Subtotal</p>
+                  <p className="font-medium">Rs {subtotal.toLocaleString()}</p>
+                </div>
+                <div className="flex justify-between mb-2">
+                  <p className="text-gray-600">Tax (10%)</p>
+                  <p className="font-medium">Rs {tax.toLocaleString()}</p>
+                </div>
+                <div className="flex justify-between mb-4">
+                  <p className="font-bold">Total</p>
+                  <p className="font-bold text-lg">Rs {total.toLocaleString()}</p>
+                </div>
+                <Button
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-lg"
+                  onClick={handlePayment}
+                >
+                  Place Order
+                </Button>
+              </div>
+            </>
           )}
         </div>
       </div>
 
-      <div className="w-96 border-l bg-gray-50 p-4 flex flex-col h-screen">
-        <h2 className="text-xl font-bold mb-4">Order Summary</h2>
-        {orderItems.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center">
-            <p className="text-gray-500">No items added yet</p>
-          </div>
-        ) : (
-          <>
-            <div className="flex-1 overflow-y-auto">
-              {orderItems.map((item, index) => (
-                <div key={index} className="flex justify-between items-center mb-4 border-b pb-2">
-                  <div>
-                    <p className="font-medium">{item.name}</p>
-                    <p className="text-sm text-gray-500">
-                      Rs {item.price.toLocaleString()} x {item.quantity}
-                    </p>
-                  </div>
-                  <p className="font-bold">Rs {(item.price * item.quantity).toLocaleString()}</p>
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 border-t pt-4">
-              <div className="flex justify-between mb-2">
-                <p className="text-gray-600">Subtotal</p>
-                <p className="font-medium">Rs {subtotal.toLocaleString()}</p>
-              </div>
-              <div className="flex justify-between mb-2">
-                <p className="text-gray-600">Tax (10%)</p>
-                <p className="font-medium">Rs {tax.toLocaleString()}</p>
-              </div>
-              <div className="flex justify-between mb-4">
-                <p className="font-bold">Total</p>
-                <p className="font-bold text-lg">Rs {total.toLocaleString()}</p>
-              </div>
-              <Button
-                className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-lg"
-                onClick={handlePayment}
-              >
-                Place Order
-              </Button>
-            </div>
-          </>
-        )}
+      {/* Mobile Cart Button */}
+      <div className="lg:hidden fixed bottom-4 right-4 z-10">
+        <Button
+          onClick={() => setCartOpen(true)}
+          className="bg-purple-600 hover:bg-purple-700 text-white rounded-full h-14 w-14 shadow-lg flex items-center justify-center"
+        >
+          <ShoppingCart size={24} />
+          {itemCount > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+              {itemCount}
+            </span>
+          )}
+        </Button>
       </div>
 
+      {/* Payment Modal */}
       <Dialog open={showPaymentModal} onOpenChange={setShowPaymentModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -966,6 +1149,7 @@ export default function POS() {
         </DialogContent>
       </Dialog>
 
+      {/* Receipt Modal */}
       <Dialog open={showReceiptModal} onOpenChange={setShowReceiptModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -1035,8 +1219,9 @@ export default function POS() {
         </DialogContent>
       </Dialog>
 
+      {/* New Order Modal */}
       <Dialog open={showNewOrderModal} onOpenChange={setShowNewOrderModal}>
-        <DialogContent className="sm:max-w-[80%] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[90%] md:max-w-[80%] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>New Order</DialogTitle>
             <DialogDescription>Select products and enter customer information for the new order.</DialogDescription>
