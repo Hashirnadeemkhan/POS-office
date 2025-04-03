@@ -1,6 +1,5 @@
-"use client";
-
-import { useState, useEffect } from "react";
+"use client"
+import { useState, useEffect, useCallback } from "react";
 import { adminAuth, adminDb } from "@/firebase/client";
 import RestaurantsTable from "@/src/components/RestaurantsTable";
 import { Building2, Users, UserMinus } from "lucide-react";
@@ -18,7 +17,7 @@ export default function Dashboard() {
   const [userName, setUserName] = useState("Admin");
   const { getIdToken } = useAuth();
 
-  const fetchRestaurants = async () => {
+  const fetchRestaurants = useCallback(async () => {
     try {
       const idToken = await getIdToken();
       const response = await fetch("/api/restaurants/get", {
@@ -46,7 +45,7 @@ export default function Dashboard() {
       console.error("Error fetching restaurants:", error);
       setStats((prev) => ({ ...prev, loading: false }));
     }
-  };
+  }, [getIdToken]); // Dependency for useCallback
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(adminAuth, async (user) => {
@@ -70,11 +69,10 @@ export default function Dashboard() {
       unsubscribeAuth();
       clearInterval(intervalId);
     };
-  }, [getIdToken]);
+  }, [fetchRestaurants]); // Updated dependency array
 
   const activePercentage = stats.total > 0 ? (stats.active / stats.total) * 100 : 0;
   const deactivePercentage = stats.total > 0 ? (stats.deactive / stats.total) * 100 : 0;
-
   return (
     <div className="flex flex-col lg:flex-row min-h-screen bg-gray-100">
       <div className="flex-1 p-6 mt-1">
