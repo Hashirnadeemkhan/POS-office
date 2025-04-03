@@ -1,86 +1,98 @@
-"use client"
+"use client";
 
-import React, { useState, FormEvent } from "react"
-import { Eye, EyeOff } from "lucide-react"
-import { signInWithEmailAndPassword } from "firebase/auth"
-import { doc, getDoc, setDoc } from "firebase/firestore"
-import { posAuth, posDb } from "@/firebase/client"
-import { useRouter } from "next/navigation"
-import { v4 as uuidv4 } from "uuid"
-import { useAuth } from "@/lib/auth-context"
+import React, { useState, FormEvent } from "react";
+import { Eye, EyeOff } from "lucide-react";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { posAuth, posDb } from "@/firebase/client";
+import { useRouter } from "next/navigation";
+import { v4 as uuidv4 } from "uuid";
+import { useAuth } from "@/lib/auth-context";
 
 export default function PosLoginPage() {
-  const [email, setEmail] = useState<string>("")
-  const [password, setPassword] = useState<string>("")
-  const [showPassword, setShowPassword] = useState<boolean>(false)
-  const [error, setError] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState<boolean>(false)
-  const router = useRouter()
-  const { isAuthenticated, authType } = useAuth()
+  const [email, setEmail] = useState<string>("");
+  const [password, setPassword] = useState<string>("");
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const router = useRouter();
+  const { isAuthenticated, authType } = useAuth();
 
   React.useEffect(() => {
     if (isAuthenticated && authType === "restaurant") {
-      router.push("/pos/dashboard")
+      router.push("/pos/dashboard");
     } else if (isAuthenticated && authType === "admin") {
       // If they're authenticated as admin but trying to access restaurant login
-      // Log them out of admin first (handled in auth context)
     }
-  }, [isAuthenticated, authType, router])
+  }, [isAuthenticated, authType, router]);
 
   const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    setError(null)
-    setIsLoading(true)
+    e.preventDefault();
+    setError(null);
+    setIsLoading(true);
 
     try {
-      // Sign out from admin auth if it exists to avoid conflicts
+      // Sign out from any existing auth to avoid conflicts
       try {
-        await posAuth.signOut()
+        await posAuth.signOut();
       } catch (e) {
         // Ignore errors here
       }
 
-      const userCredential = await signInWithEmailAndPassword(posAuth, email, password)
-      const user = userCredential.user
+      const userCredential = await signInWithEmailAndPassword(posAuth, email, password);
+      const user = userCredential.user;
 
-      const restaurantDoc = await getDoc(doc(posDb, "restaurants", user.uid))
+      // Fetch restaurant data from Firestore
+      const restaurantDoc = await getDoc(doc(posDb, "restaurants", user.uid));
       if (!restaurantDoc.exists()) {
-        throw new Error("Restaurant account not found")
+        throw new Error("Restaurant account not found");
       }
 
-      const restaurantData = restaurantDoc.data()
-      const currentDate = new Date()
-      const activationDate = new Date(restaurantData.tokenActivationDate)
-      const expiryDate = new Date(restaurantData.tokenExpiresAt)
+      const restaurantData = restaurantDoc.data();
 
+      // Additional client-side check (optional, since rules will enforce it)
       if (!restaurantData.isActive) {
-        throw new Error("Account is inactive")
+        throw new Error("Account is not active");
       }
+
+      const currentDate = new Date();
+      const activationDate = new Date(restaurantData.tokenActivationDate);
+      const expiryDate = new Date(restaurantData.tokenExpiresAt);
+
       if (currentDate < activationDate) {
-        throw new Error(`Account activates on ${activationDate.toLocaleDateString()}`)
+        throw new Error(`Account activates on ${activationDate.toLocaleDateString()}`);
       }
       if (currentDate > expiryDate) {
-        throw new Error(`Account expired on ${expiryDate.toLocaleDateString()}`)
+        throw new Error(`Account expired on ${expiryDate.toLocaleDateString()}`);
       }
 
-      const sessionToken = uuidv4()
-      await setDoc(doc(posDb, "restaurantSessions", user.uid), {
-        sessionToken,
-        email: user.email,
-        createdAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      })
+      // Attempt to create a session token
+      const sessionToken = uuidv4();
+      try {
+        await setDoc(doc(posDb, "restaurantSessions", user.uid), {
+          sessionToken,
+          email: user.email,
+          createdAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        });
+      } catch (sessionError: any) {
+        if (sessionError.code === "permission-denied") {
+          throw new Error("Account is not active");
+        }
+        throw sessionError;
+      }
 
-      localStorage.setItem("restaurantSessionToken", sessionToken)
-      router.push("/pos/dashboard")
+      localStorage.setItem("restaurantSessionToken", sessionToken);
+      router.push("/pos/dashboard");
     } catch (err: any) {
-      console.error("Login error:", err)
-      setError(err.message || "An error occurred during login.")
+      console.error("Login error:", err);
+      setError(err.message || "An error occurred during login.");
+      // Sign out the user if login fails to prevent partial login state
+      await posAuth.signOut();
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
-
+  };
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-gray-50">
@@ -146,5 +158,5 @@ export default function PosLoginPage() {
         </form>
       </div>
     </div>
-  )
+  );
 }
