@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation"
 import { PlusCircle, Pencil, Trash2, ChevronDown, ChevronUp, ImageIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { collection, query, getDocs, deleteDoc, doc, where, orderBy, onSnapshot } from "firebase/firestore"
-import { posDb } from "@/firebase/client" // Updated import
+import { posDb } from "@/firebase/client"
 import { toast } from "sonner"
 import { DeleteProductDialog } from "@/src/components/DeleteProductDialog"
 import { deleteImage, getImageIdFromUrl } from "@/lib/imageStorage"
 import Image from "next/image"
+import { useAuth } from "@/lib/auth-context" // Import useAuth to get restaurantId
 
 // Define interfaces for our data
 interface VariantAttribute {
@@ -25,6 +26,7 @@ interface Variant {
   stock: number
   attributes: VariantAttribute[]
   image_url?: string
+  productRestaurantId?: string // Add this field
 }
 
 interface Product {
@@ -39,21 +41,27 @@ interface Product {
   variants: Variant[]
   main_image_url?: string
   gallery_images?: string[]
+  restaurantId?: string // Add this field
 }
 
 interface Category {
   id: string
   name: string
+  restaurantId?: string // Add this field
 }
 
 interface Subcategory {
   id: string
   name: string
   categoryId: string
+  restaurantId?: string // Add this field
 }
 
 export default function ProductsPage() {
   const router = useRouter()
+  const { user } = useAuth() // Get the logged-in user
+  const restaurantId = user?.uid // Get the restaurantId
+
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [subcategories, setSubcategories] = useState<Subcategory[]>([])
@@ -77,15 +85,22 @@ export default function ProductsPage() {
     }))
   }
 
-  // Fetch categories
+  // Fetch categories (restaurant-specific)
   useEffect(() => {
-    const q = query(collection(posDb, "categories"), orderBy("name")) // Updated to posDb
+    if (!restaurantId) return
+
+    const q = query(
+      collection(posDb, "categories"),
+      where("restaurantId", "==", restaurantId), // Add restaurantId filter
+      orderBy("name")
+    )
     const unsubscribe = onSnapshot(
       q,
       (querySnapshot) => {
         const categoriesList = querySnapshot.docs.map((doc) => ({
           id: doc.id,
           name: doc.data().name,
+          restaurantId: doc.data().restaurantId,
         }))
         setCategories(categoriesList)
       },
@@ -95,11 +110,17 @@ export default function ProductsPage() {
       }
     )
     return () => unsubscribe()
-  }, [])
+  }, [restaurantId])
 
-  // Fetch subcategories
+  // Fetch subcategories (restaurant-specific)
   useEffect(() => {
-    const q = query(collection(posDb, "subcategories"), orderBy("name")) // Updated to posDb
+    if (!restaurantId) return
+
+    const q = query(
+      collection(posDb, "subcategories"),
+      where("restaurantId", "==", restaurantId), // Add restaurantId filter
+      orderBy("name")
+    )
     const unsubscribe = onSnapshot(
       q,
       (querySnapshot) => {
@@ -107,6 +128,7 @@ export default function ProductsPage() {
           id: doc.id,
           name: doc.data().name,
           categoryId: doc.data().categoryId,
+          restaurantId: doc.data().restaurantId,
         }))
         setSubcategories(subcategoriesList)
       },
@@ -116,14 +138,20 @@ export default function ProductsPage() {
       }
     )
     return () => unsubscribe()
-  }, [])
+  }, [restaurantId])
 
-  // Fetch products, variants, and attributes
+  // Fetch products, variants, and attributes (restaurant-specific)
   useEffect(() => {
+    if (!restaurantId) return
+
     const fetchProducts = async () => {
       setIsLoading(true)
       try {
-        let q = query(collection(posDb, "products"), orderBy("name")) // Updated to posDb
+        let q = query(
+          collection(posDb, "products"),
+          where("restaurantId", "==", restaurantId), // Add restaurantId filter
+          orderBy("name")
+        )
 
         if (filterCategory && filterCategory !== "all") {
           q = query(q, where("category", "==", filterCategory))
@@ -142,7 +170,11 @@ export default function ProductsPage() {
               const productData = docSnapshot.data()
 
               // Fetch variants for this product
-              const variantsQuery = query(collection(posDb, "variants"), where("product_id", "==", docSnapshot.id)) // Updated to posDb
+              const variantsQuery = query(
+                collection(posDb, "variants"),
+                where("product_id", "==", docSnapshot.id),
+                where("productRestaurantId", "==", restaurantId) // Add restaurantId filter
+              )
               const variantsSnapshot = await getDocs(variantsQuery)
               const variants: Variant[] = []
 
@@ -151,8 +183,9 @@ export default function ProductsPage() {
 
                 // Fetch attributes for this variant
                 const attributesQuery = query(
-                  collection(posDb, "variant_attributes"), // Updated to posDb
-                  where("variant_id", "==", variantDoc.id)
+                  collection(posDb, "variant_attributes"),
+                  where("variant_id", "==", variantDoc.id),
+                  where("variantRestaurantId", "==", restaurantId) // Add restaurantId filter
                 )
                 const attributesSnapshot = await getDocs(attributesQuery)
                 const attributes = attributesSnapshot.docs.map((attrDoc) => ({
@@ -167,6 +200,7 @@ export default function ProductsPage() {
                   stock: variantData.stock || 0,
                   attributes,
                   image_url: variantData.image_url || "",
+                  productRestaurantId: variantData.productRestaurantId,
                 })
               }
 
@@ -182,6 +216,7 @@ export default function ProductsPage() {
                 variants,
                 main_image_url: productData.main_image_url || "",
                 gallery_images: productData.gallery_images || [],
+                restaurantId: productData.restaurantId,
               })
             }
 
@@ -204,7 +239,7 @@ export default function ProductsPage() {
     }
 
     fetchProducts()
-  }, [filterCategory, filterSubcategory])
+  }, [restaurantId, filterCategory, filterSubcategory])
 
   // Handle product deletion
   const handleDeleteProduct = async () => {
@@ -216,14 +251,18 @@ export default function ProductsPage() {
             await deleteImage(getImageIdFromUrl(variant.image_url) || "")
           }
 
-          const attributesQuery = query(collection(posDb, "variant_attributes"), where("variant_id", "==", variant.id)) // Updated to posDb
+          const attributesQuery = query(
+            collection(posDb, "variant_attributes"),
+            where("variant_id", "==", variant.id),
+            where("variantRestaurantId", "==", restaurantId)
+          )
           const attributesSnapshot = await getDocs(attributesQuery)
 
           for (const attrDoc of attributesSnapshot.docs) {
-            await deleteDoc(doc(posDb, "variant_attributes", attrDoc.id)) // Updated to posDb
+            await deleteDoc(doc(posDb, "variant_attributes", attrDoc.id))
           }
 
-          await deleteDoc(doc(posDb, "variants", variant.id)) // Updated to posDb
+          await deleteDoc(doc(posDb, "variants", variant.id))
         }
 
         // Delete product images
@@ -238,7 +277,7 @@ export default function ProductsPage() {
         }
 
         // Delete the product
-        await deleteDoc(doc(posDb, "products", selectedProduct.id)) // Updated to posDb
+        await deleteDoc(doc(posDb, "products", selectedProduct.id))
 
         setProducts(products.filter((p) => p.id !== selectedProduct.id))
         toast.success(`${selectedProduct.name} has been deleted`)
@@ -260,7 +299,6 @@ export default function ProductsPage() {
   // Update total pages whenever filtered products change
   useEffect(() => {
     setTotalPages(Math.ceil(filteredProducts.length / ITEMS_PER_PAGE))
-    // Reset to first page if current page exceeds total pages after filtering
     if (currentPage > Math.ceil(filteredProducts.length / ITEMS_PER_PAGE)) {
       setCurrentPage(1)
     }
@@ -270,6 +308,10 @@ export default function ProductsPage() {
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
   )
+
+  if (!restaurantId) {
+    return <div>Please log in to view products.</div>
+  }
 
   return (
     <div className="flex flex-col h-screen">

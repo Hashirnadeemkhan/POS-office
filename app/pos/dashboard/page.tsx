@@ -1,57 +1,70 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
-import { CalendarDays, Package, ShoppingBag, Tag } from "lucide-react"
-import { collection, query, getDocs, orderBy, limit } from "firebase/firestore"
-import { posDb } from "@/firebase/client"
-import Image from "next/image"
-import { Button } from "@/components/ui/button"
-import Link from "next/link"
+import { useEffect, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { CalendarDays, Package, ShoppingBag, Tag } from "lucide-react";
+import { collection, query, getDocs, orderBy, limit, where } from "firebase/firestore";
+import { posDb } from "@/firebase/client";
+import Image from "next/image";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { useAuth } from "@/lib/auth-context";
+import { getDoc,doc } from "firebase/firestore";
 
 interface Product {
-  id: string
-  name: string
-  sku: string
-  base_price?: number
-  status?: "active" | "inactive"
-  category?: string
-  main_image_url?: string
-  created_at?: Date
+  id: string;
+  name: string;
+  sku: string;
+  base_price?: number;
+  status?: "active" | "inactive";
+  category?: string;
+  main_image_url?: string;
+  created_at?: Date;
+  restaurantId?: string;
 }
 
 interface LicenseInfo {
-  activationDate: Date
-  expiryDate: Date
-  remainingDays: number
+  activationDate: Date;
+  expiryDate: Date;
+  remainingDays: number;
 }
 
 export default function PosDashboard() {
-  const [products, setProducts] = useState<Product[]>([])
-  const [recentProducts, setRecentProducts] = useState<Product[]>([])
-  const [categoryCount, setCategoryCount] = useState<number>(0)
+  const { user } = useAuth();
+  const restaurantId = user?.uid;
+
+  const [products, setProducts] = useState<Product[]>([]);
+  const [recentProducts, setRecentProducts] = useState<Product[]>([]);
+  const [categoryCount, setCategoryCount] = useState<number>(0);
   const [licenseInfo, setLicenseInfo] = useState<LicenseInfo>({
     activationDate: new Date(),
     expiryDate: new Date(new Date().setMonth(new Date().getMonth() + 12)),
     remainingDays: 365,
-  })
-  const [isLoading, setIsLoading] = useState<boolean>(true)
-  const [error, setError] = useState<string | null>(null)
+  });
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchData()
-  }, [])
+    if (restaurantId) {
+      fetchData();
+    }
+  }, [restaurantId]);
 
   const fetchData = async () => {
+    if (!restaurantId) return;
+  
     try {
-      setIsLoading(true)
-      setError(null)
-
-      // Fetch all products
-      const productsQuery = query(collection(posDb, "products"))
-      const productsSnapshot = await getDocs(productsQuery)
+      setIsLoading(true);
+      setError(null);
+  
+      // Fetch products
+      const productsQuery = query(
+        collection(posDb, "products"),
+        where("restaurantId", "==", restaurantId)
+      );
+      const productsSnapshot = await getDocs(productsQuery);
       const productsData = productsSnapshot.docs.map((doc) => ({
         id: doc.id,
         name: doc.data().name || "Unnamed Product",
@@ -61,16 +74,18 @@ export default function PosDashboard() {
         category: doc.data().category || "Uncategorized",
         main_image_url: doc.data().main_image_url || "",
         created_at: doc.data().created_at?.toDate() || new Date(),
-      })) as Product[]
-      setProducts(productsData)
-
+        restaurantId: doc.data().restaurantId || restaurantId,
+      }));
+      setProducts(productsData);
+  
       // Fetch recent products
       const recentQuery = query(
         collection(posDb, "products"),
+        where("restaurantId", "==", restaurantId),
         orderBy("created_at", "desc"),
         limit(10)
-      )
-      const recentSnapshot = await getDocs(recentQuery)
+      );
+      const recentSnapshot = await getDocs(recentQuery);
       const recentData = recentSnapshot.docs.map((doc) => ({
         id: doc.id,
         name: doc.data().name || "Unnamed Product",
@@ -80,50 +95,58 @@ export default function PosDashboard() {
         category: doc.data().category || "Uncategorized",
         main_image_url: doc.data().main_image_url || "",
         created_at: doc.data().created_at?.toDate() || new Date(),
-      })) as Product[]
-      setRecentProducts(recentData)
-
+        restaurantId: doc.data().restaurantId || restaurantId,
+      }));
+      setRecentProducts(recentData);
+  
       // Fetch categories count
-      const categoriesQuery = query(collection(posDb, "categories"))
-      const categoriesSnapshot = await getDocs(categoriesQuery)
-      setCategoryCount(categoriesSnapshot.size)
-
-      // Fetch license information
-      const licenseQuery = query(collection(posDb, "license"))
-      const licenseSnapshot = await getDocs(licenseQuery)
-      let activationDate = new Date()
-      let expiryDate = new Date(new Date().setFullYear(new Date().getFullYear() + 1))
-
-      if (!licenseSnapshot.empty) {
-        const licenseData = licenseSnapshot.docs[0].data()
-        activationDate = licenseData.activationDate?.toDate() || new Date()
-        expiryDate = licenseData.expiryDate?.toDate() || 
-          new Date(new Date(activationDate).setFullYear(activationDate.getFullYear() + 1))
+      const categoriesQuery = query(
+        collection(posDb, "categories"),
+        where("restaurantId", "==", restaurantId)
+      );
+      const categoriesSnapshot = await getDocs(categoriesQuery);
+      setCategoryCount(categoriesSnapshot.size);
+  
+      // Fetch license information using document ID
+      const restaurantDocRef = doc(posDb, "restaurants", restaurantId);
+      const restaurantSnapshot = await getDoc(restaurantDocRef);
+      if (restaurantSnapshot.exists()) {
+        const restaurantData = restaurantSnapshot.data();
+        const activationDate = restaurantData.tokenActivationDate?.toDate() || new Date();
+        const expiryDate = restaurantData.tokenExpiresAt?.toDate() || 
+          new Date(new Date(activationDate).setFullYear(activationDate.getFullYear() + 1));
+  
+        const remainingDays = Math.max(
+          0,
+          Math.ceil((expiryDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+        );
+  
+        setLicenseInfo({
+          activationDate,
+          expiryDate,
+          remainingDays,
+        });
+      } else {
+        throw new Error("Restaurant data not found");
       }
-
-      const remainingDays = Math.max(0, Math.ceil(
-        (expiryDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
-      ))
-
-      setLicenseInfo({
-        activationDate,
-        expiryDate,
-        remainingDays,
-      })
     } catch (err) {
-      console.error("Error fetching dashboard data:", err)
-      setError("Failed to load dashboard data. Please check your connection or permissions.")
+      console.error("Error fetching dashboard data:", err);
+      setError("Failed to load dashboard data. Please check your connection or permissions.");
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   const formatDate = (date: Date): string => {
-    return new Intl.DateTimeFormat("en-US", { 
-      year: "numeric", 
-      month: "long", 
-      day: "numeric" 
-    }).format(date)
+    return new Intl.DateTimeFormat("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }).format(date);
+  };
+
+  if (!restaurantId) {
+    return <div>Please log in to view the dashboard.</div>;
   }
 
   if (isLoading) {
@@ -131,7 +154,7 @@ export default function PosDashboard() {
       <div className="flex items-center justify-center h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
       </div>
-    )
+    );
   }
 
   if (error) {
@@ -139,7 +162,7 @@ export default function PosDashboard() {
       <div className="flex items-center justify-center h-screen text-red-600">
         {error}
       </div>
-    )
+    );
   }
 
   return (
@@ -248,8 +271,8 @@ export default function PosDashboard() {
                 <CardDescription>The latest 10 products added to your inventory</CardDescription>
               </div>
               <Link href="/pos/products">
-                <Button 
-                  className="bg-purple-500 text-white hover:bg-purple-600 hover:text-white" 
+                <Button
+                  className="bg-purple-500 text-white hover:bg-purple-600 hover:text-white"
                   variant="outline"
                 >
                   View All Products
@@ -322,5 +345,5 @@ export default function PosDashboard() {
         </Card>
       </div>
     </div>
-  )
+  );
 }

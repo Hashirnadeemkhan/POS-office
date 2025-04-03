@@ -1,7 +1,6 @@
 "use client"
 
-import type React from "react"
-import { useState, useRef, useEffect } from "react"
+import React, { useState, useRef, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { PlusCircle, Trash2, ArrowLeft, Upload, X, ImageIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -16,8 +15,8 @@ import { collection, addDoc, query, orderBy, onSnapshot, where } from "firebase/
 import { posDb } from "@/firebase/client"
 import { saveImage, generateImageId } from "@/lib/imageStorage"
 import Image from "next/image"
+import { useAuth } from "@/lib/auth-context" // Import useAuth
 
-// Define interfaces
 interface VariantAttribute {
   key: string
   value: string
@@ -35,16 +34,20 @@ interface Variant {
 interface Category {
   id: string
   name: string
+  restaurantId?: string // Add restaurantId
 }
 
 interface Subcategory {
   id: string
   name: string
   categoryId: string
+  restaurantId?: string // Add restaurantId
 }
 
 export default function AddProductPage() {
   const router = useRouter()
+  const { user } = useAuth() // Get authenticated user
+  const restaurantId = user?.uid // Get restaurantId
 
   // Base product information
   const [name, setName] = useState("")
@@ -56,7 +59,7 @@ export default function AddProductPage() {
   // Variants
   const [variants, setVariants] = useState<Variant[]>([])
 
-  // Add a new state for basic attributes
+  // Basic attributes
   const [basicAttributes, setBasicAttributes] = useState<VariantAttribute[]>([{ key: "", value: "" }])
 
   // Categories and Subcategories
@@ -79,117 +82,125 @@ export default function AddProductPage() {
   // Loading state
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Fetch categories from Firestore
+  // Fetch categories (restaurant-specific)
   useEffect(() => {
-    const q = query(collection(posDb, "categories"), orderBy("name"))
+    if (!restaurantId) return;
+
+    const q = query(
+      collection(posDb, "categories"),
+      where("restaurantId", "==", restaurantId), // Filter by restaurantId
+      orderBy("name")
+    );
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
         const cats = snapshot.docs.map((doc) => ({
           id: doc.id,
           name: doc.data().name,
-        }))
-        setCategories(cats)
+          restaurantId: doc.data().restaurantId,
+        }));
+        setCategories(cats);
       },
       (error) => {
-        console.error("Error fetching categories:", error)
-        toast.error("Failed to load categories")
-      },
-    )
-    return () => unsubscribe()
-  }, [])
-
-  // Fetch subcategories when category changes
-  useEffect(() => {
-    if (category) {
-      const selectedCategory = categories.find((cat) => cat.name === category)
-      if (selectedCategory) {
-        const q = query(
-          collection(posDb, "subcategories"),
-          where("categoryId", "==", selectedCategory.id),
-          orderBy("name"),
-        )
-        const unsubscribe = onSnapshot(
-          q,
-          (snapshot) => {
-            const subcats = snapshot.docs.map((doc) => ({
-              id: doc.id,
-              name: doc.data().name,
-              categoryId: doc.data().categoryId,
-            }))
-            setSubcategories(subcats)
-          },
-          (error) => {
-            console.error("Error fetching subcategories:", error)
-            toast.error("Failed to load subcategories")
-          },
-        )
-        return () => unsubscribe()
-      } else {
-        setSubcategories([])
+        console.error("Error fetching categories:", error);
+        toast.error("Failed to load categories");
       }
-    } else {
-      setSubcategories([])
+    );
+    return () => unsubscribe();
+  }, [restaurantId]);
+
+  // Fetch subcategories when category changes (restaurant-specific)
+  useEffect(() => {
+    if (!restaurantId || !category) {
+      setSubcategories([]);
+      return;
     }
-  }, [category, categories])
+
+    const selectedCategory = categories.find((cat) => cat.name === category);
+    if (selectedCategory) {
+      const q = query(
+        collection(posDb, "subcategories"),
+        where("categoryId", "==", selectedCategory.id),
+        where("restaurantId", "==", restaurantId), // Filter by restaurantId
+        orderBy("name")
+      );
+      const unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          const subcats = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            name: doc.data().name,
+            categoryId: doc.data().categoryId,
+            restaurantId: doc.data().restaurantId,
+          }));
+          setSubcategories(subcats);
+        },
+        (error) => {
+          console.error("Error fetching subcategories:", error);
+          toast.error("Failed to load subcategories");
+        }
+      );
+      return () => unsubscribe();
+    }
+  }, [category, categories, restaurantId]);
 
   // Handle main image selection
   const handleMainImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0]
-      setMainImageFile(file)
-      setMainImagePreview(URL.createObjectURL(file))
+      const file = e.target.files[0];
+      setMainImageFile(file);
+      setMainImagePreview(URL.createObjectURL(file));
     }
-  }
+  };
 
   // Handle gallery images selection
   const handleGalleryImagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const newFiles = Array.from(e.target.files)
-      const newPreviews = newFiles.map((file) => URL.createObjectURL(file))
-      setGalleryFiles((prev) => [...prev, ...newFiles])
-      setGalleryPreviews((prev) => [...prev, ...newPreviews])
+      const newFiles = Array.from(e.target.files);
+      const newPreviews = newFiles.map((file) => URL.createObjectURL(file));
+      setGalleryFiles((prev) => [...prev, ...newFiles]);
+      setGalleryPreviews((prev) => [...prev, ...newPreviews]);
     }
-  }
+  };
 
   // Handle variant image selection
   const handleVariantImageChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0]
-      const newVariants = [...variants]
+      const file = e.target.files[0];
+      const newVariants = [...variants];
       newVariants[index] = {
         ...newVariants[index],
         imageFile: file,
         imagePreview: URL.createObjectURL(file),
-      }
-      setVariants(newVariants)
+      };
+      setVariants(newVariants);
     }
-  }
+  };
 
   // Remove gallery image
   const removeGalleryImage = (index: number) => {
-    const newFiles = [...galleryFiles]
-    const newPreviews = [...galleryPreviews]
-    URL.revokeObjectURL(newPreviews[index])
-    newFiles.splice(index, 1)
-    newPreviews.splice(index, 1)
-    setGalleryFiles(newFiles)
-    setGalleryPreviews(newPreviews)
-  }
+    const newFiles = [...galleryFiles];
+    const newPreviews = [...galleryPreviews];
+    URL.revokeObjectURL(newPreviews[index]);
+    newFiles.splice(index, 1);
+    newPreviews.splice(index, 1);
+    setGalleryFiles(newFiles);
+    setGalleryPreviews(newPreviews);
+  };
 
   // Remove variant image
   const removeVariantImage = (index: number) => {
-    const newVariants = [...variants]
+    const newVariants = [...variants];
     if (newVariants[index].imagePreview) {
-      URL.revokeObjectURL(newVariants[index].imagePreview)
+      URL.revokeObjectURL(newVariants[index].imagePreview);
     }
     newVariants[index] = {
       ...newVariants[index],
       imageFile: null,
       imagePreview: "",
-    }
-    setVariants(newVariants)
-  }
+    };
+    setVariants(newVariants);
+  };
 
   // Add a new variant
   const addVariant = () => {
@@ -203,151 +214,150 @@ export default function AddProductPage() {
         imageFile: null,
         imagePreview: "",
       },
-    ])
-  }
+    ]);
+  };
 
   // Remove a variant
   const removeVariant = (index: number) => {
     const newVariants = [...variants];
-    
-    // Agar image preview hai to memory se free karna
     if (newVariants[index]?.imagePreview) {
       URL.revokeObjectURL(newVariants[index].imagePreview);
     }
-  
-    // Index ka variant hatao
     newVariants.splice(index, 1);
-    
-    // Updated state set karo
     setVariants(newVariants);
   };
-  
 
   // Update variant field
   const updateVariant = (index: number, field: keyof Variant, value: string) => {
-    const newVariants = [...variants]
+    const newVariants = [...variants];
     newVariants[index] = {
       ...newVariants[index],
       [field]: value,
-    }
-    setVariants(newVariants)
-  }
+    };
+    setVariants(newVariants);
+  };
 
   // Add attribute to variant
   const addAttribute = (variantIndex: number) => {
-    const newVariants = [...variants]
+    const newVariants = [...variants];
     newVariants[variantIndex] = {
       ...newVariants[variantIndex],
       attributes: [...newVariants[variantIndex].attributes, { key: "", value: "" }],
-    }
-    setVariants(newVariants)
-  }
+    };
+    setVariants(newVariants);
+  };
 
   // Remove attribute from variant
   const removeAttribute = (variantIndex: number, attrIndex: number) => {
-    const newVariants = [...variants]
+    const newVariants = [...variants];
     if (newVariants[variantIndex].attributes.length > 1) {
-      const newAttributes = [...newVariants[variantIndex].attributes]
-      newAttributes.splice(attrIndex, 1)
+      const newAttributes = [...newVariants[variantIndex].attributes];
+      newAttributes.splice(attrIndex, 1);
       newVariants[variantIndex] = {
         ...newVariants[variantIndex],
         attributes: newAttributes,
-      }
-      setVariants(newVariants)
+      };
+      setVariants(newVariants);
     }
-  }
+  };
 
   // Update attribute
   const updateAttribute = (variantIndex: number, attrIndex: number, field: keyof VariantAttribute, value: string) => {
-    const newVariants = [...variants]
-    const newAttributes = [...newVariants[variantIndex].attributes]
+    const newVariants = [...variants];
+    const newAttributes = [...newVariants[variantIndex].attributes];
     newAttributes[attrIndex] = {
       ...newAttributes[attrIndex],
       [field]: value,
-    }
+    };
     newVariants[variantIndex] = {
       ...newVariants[variantIndex],
       attributes: newAttributes,
-    }
-    setVariants(newVariants)
-  }
+    };
+    setVariants(newVariants);
+  };
 
   // Helper to set variant image ref
   const setVariantImageRef = (index: number) => (el: HTMLInputElement | null) => {
-    variantImageRefs.current[index] = el
-  }
+    variantImageRefs.current[index] = el;
+  };
 
   // Add a function to handle basic attributes
   const addBasicAttribute = () => {
-    setBasicAttributes([...basicAttributes, { key: "", value: "" }])
-  }
+    setBasicAttributes([...basicAttributes, { key: "", value: "" }]);
+  };
 
   const removeBasicAttribute = (index: number) => {
     if (basicAttributes.length > 1) {
-      const newAttributes = [...basicAttributes]
-      newAttributes.splice(index, 1)
-      setBasicAttributes(newAttributes)
+      const newAttributes = [...basicAttributes];
+      newAttributes.splice(index, 1);
+      setBasicAttributes(newAttributes);
     }
-  }
+  };
 
   const updateBasicAttribute = (index: number, field: keyof VariantAttribute, value: string) => {
-    const newAttributes = [...basicAttributes]
+    const newAttributes = [...basicAttributes];
     newAttributes[index] = {
       ...newAttributes[index],
       [field]: value,
-    }
-    setBasicAttributes(newAttributes)
-  }
+    };
+    setBasicAttributes(newAttributes);
+  };
 
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsSubmitting(true)
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    if (!restaurantId) {
+      toast.error("No restaurant ID found. Please log in again.");
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
       if (!name || !sku || !basePrice) {
-        toast.error("Please fill in all required fields")
-        setIsSubmitting(false)
-        return
+        toast.error("Please fill in all required fields");
+        setIsSubmitting(false);
+        return;
       }
 
       for (const attr of basicAttributes) {
         if (!attr.key || !attr.value) {
-          toast.error("Please fill in all attribute fields")
-          setIsSubmitting(false)
-          return
+          toast.error("Please fill in all attribute fields");
+          setIsSubmitting(false);
+          return;
         }
       }
 
       if (variants.length > 0) {
         for (const variant of variants) {
           if (!variant.name || !variant.price || !variant.stock) {
-            toast.error("Please fill in all variant fields")
-            setIsSubmitting(false)
-            return
+            toast.error("Please fill in all variant fields");
+            setIsSubmitting(false);
+            return;
           }
           for (const attr of variant.attributes) {
             if (!attr.key || !attr.value) {
-              toast.error("Please fill in all attribute fields")
-              setIsSubmitting(false)
-              return
+              toast.error("Please fill in all attribute fields");
+              setIsSubmitting(false);
+              return;
             }
           }
         }
       }
 
-      let mainImageUrl = ""
+      let mainImageUrl = "";
       if (mainImageFile) {
-        const imageId = generateImageId("product_main")
-        mainImageUrl = await saveImage(imageId, mainImageFile)
+        const imageId = generateImageId("product_main");
+        mainImageUrl = await saveImage(imageId, mainImageFile);
       }
 
-      const galleryUrls: string[] = []
+      const galleryUrls: string[] = [];
       if (galleryFiles.length > 0) {
         for (const file of galleryFiles) {
-          const imageId = generateImageId("product_gallery")
-          const url = await saveImage(imageId, file)
-          galleryUrls.push(url)
+          const imageId = generateImageId("product_gallery");
+          const url = await saveImage(imageId, file);
+          galleryUrls.push(url);
         }
       }
 
@@ -362,14 +372,15 @@ export default function AddProductPage() {
         main_image_url: mainImageUrl,
         gallery_images: galleryUrls,
         attributes: basicAttributes,
+        restaurantId, // Add restaurantId
         created_at: new Date(),
-      })
+      });
 
       for (const variant of variants) {
-        let variantImageUrl = ""
+        let variantImageUrl = "";
         if (variant.imageFile) {
-          const imageId = generateImageId("variant")
-          variantImageUrl = await saveImage(imageId, variant.imageFile)
+          const imageId = generateImageId("variant");
+          variantImageUrl = await saveImage(imageId, variant.imageFile);
         }
 
         const variantRef = await addDoc(collection(posDb, "variants"), {
@@ -378,33 +389,40 @@ export default function AddProductPage() {
           price: Number.parseFloat(variant.price),
           stock: Number.parseInt(variant.stock),
           image_url: variantImageUrl,
-        })
+          productRestaurantId: restaurantId, // Add productRestaurantId
+        });
 
         for (const attr of variant.attributes) {
           await addDoc(collection(posDb, "variant_attributes"), {
             variant_id: variantRef.id,
             key_name: attr.key,
             value_name: attr.value,
-          })
+            variantRestaurantId: restaurantId, // Add variantRestaurantId
+          });
         }
       }
 
-      if (mainImagePreview) URL.revokeObjectURL(mainImagePreview)
-      galleryPreviews.forEach((url) => URL.revokeObjectURL(url))
+      if (mainImagePreview) URL.revokeObjectURL(mainImagePreview);
+      galleryPreviews.forEach((url) => URL.revokeObjectURL(url));
       variants.forEach((variant) => {
-        if (variant.imagePreview) URL.revokeObjectURL(variant.imagePreview)
-      })
+        if (variant.imagePreview) URL.revokeObjectURL(variant.imagePreview);
+      });
 
-      toast.success("Product added successfully")
-      router.push("/pos/products")
-    } catch (error) {
-      console.error("Error adding product:", error)
-      toast.error("Failed to add product")
+      toast.success("Product added successfully");
+      router.push("/pos/products");
+    } catch (error: any) {
+      console.error("Error adding product:", error.message, error.code);
+      toast.error(`Failed to add product: ${error.message}`);
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
+  };
+
+  if (!restaurantId) {
+    return <div>Please log in to add a product.</div>;
   }
 
+  // Rest of the JSX remains unchanged
   return (
     <div className="container mx-auto py-8">
       <div className="flex items-center mb-6">
@@ -566,7 +584,6 @@ export default function AddProductPage() {
           </CardContent>
         </Card>
 
-        {/* Product Images */}
         <Card>
           <CardHeader>
             <CardTitle>Product Images</CardTitle>
@@ -592,9 +609,9 @@ export default function AddProductPage() {
                         size="icon"
                         className="absolute top-1 right-1 h-6 w-6 bg-white rounded-full"
                         onClick={() => {
-                          if (mainImagePreview) URL.revokeObjectURL(mainImagePreview)
-                          setMainImageFile(null)
-                          setMainImagePreview("")
+                          if (mainImagePreview) URL.revokeObjectURL(mainImagePreview);
+                          setMainImageFile(null);
+                          setMainImagePreview("");
                         }}
                       >
                         <X className="h-4 w-4" />
@@ -659,7 +676,6 @@ export default function AddProductPage() {
           </CardContent>
         </Card>
 
-        {/* Variants */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Product Variants (Optional)</CardTitle>
@@ -670,9 +686,7 @@ export default function AddProductPage() {
           </CardHeader>
           <CardContent className="space-y-6">
             {variants.length === 0 ? (
-              <div className="text-center py-4 text-muted-foreground">
-              
-              </div>
+              <div className="text-center py-4 text-muted-foreground"></div>
             ) : (
               variants.map((variant, variantIndex) => (
                 <div key={variantIndex} className="border rounded-lg p-4 space-y-4">
@@ -824,5 +838,5 @@ export default function AddProductPage() {
         </div>
       </form>
     </div>
-  )
+  );
 }

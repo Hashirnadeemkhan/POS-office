@@ -1,586 +1,605 @@
-"use client"
+"use client";
 
-import type React from "react"
-import { useState, useEffect, useRef, useCallback } from "react"
-import { useRouter } from "next/navigation"
-import { PlusCircle, Trash2, ArrowLeft, Upload, X, ImageIcon, Loader2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Switch } from "@/components/ui/switch"
-import { toast } from "sonner"
-import { collection, doc, getDoc, getDocs, updateDoc, query, where, addDoc, deleteDoc } from "firebase/firestore"
-import { posDb } from "@/firebase/client" // Updated import
-import { saveImage, generateImageId, deleteImage, getImageIdFromUrl } from "@/lib/imageStorage"
-import Image from "next/image"
+import React, { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { PlusCircle, Trash2, ArrowLeft, Upload, X, ImageIcon, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
+import {
+  collection,
+  doc,
+  getDoc,
+  updateDoc,
+  query,
+  where,
+  orderBy,
+  getDocs,
+  addDoc,
+  deleteDoc,
+} from "firebase/firestore";
+import { posDb } from "@/firebase/client";
+import { saveImage, generateImageId, deleteImage, getImageIdFromUrl } from "@/lib/imageStorage";
+import Image from "next/image";
+import { useAuth } from "@/lib/auth-context";
 
-// Define the attribute interface
 interface VariantAttribute {
-  id?: string
-  key_name?: string
-  value_name?: string
-  key: string
-  value: string
+  id?: string; // Added for existing attributes
+  key: string;
+  value: string;
 }
 
-// Define the variant interface
 interface Variant {
-  id: string
-  name: string
-  price: string
-  stock: string
-  attributes: VariantAttribute[]
-  image_url?: string
-  imageFile: File | null
-  imagePreview: string
-  isImageChanged: boolean
+  id?: string; // Added for existing variants
+  name: string;
+  price: string;
+  stock: string;
+  attributes: VariantAttribute[];
+  imageFile: File | null;
+  imagePreview: string;
+  image_url?: string; // For existing images
 }
 
-interface Product {
-  id: string
-  name: string
-  sku: string
-  base_price: string
-  description: string
-  status: "active" | "inactive"
-  category: string
-  subcategory: string
-  main_image_url?: string
-  gallery_images?: string[]
+interface Category {
+  id: string;
+  name: string;
+  restaurantId?: string;
+}
+
+interface Subcategory {
+  id: string;
+  name: string;
+  categoryId: string;
+  restaurantId?: string;
 }
 
 export default function EditProductPage({ params }: { params: { id: string } }) {
-  const router = useRouter()
-  const productId = params.id
+  const router = useRouter();
+  const { user } = useAuth();
+  const restaurantId = user?.uid;
+  const productId = params.id;
 
-  // Product state
-  const [product, setProduct] = useState<Product>({
-    id: productId,
-    name: "",
-    sku: "",
-    base_price: "",
-    description: "",
-    status: "active",
-    category: "",
-    subcategory: "",
-    main_image_url: "",
-    gallery_images: [],
-  })
+  // Base product information
+  const [name, setName] = useState("");
+  const [sku, setSku] = useState("");
+  const [basePrice, setBasePrice] = useState("");
+  const [description, setDescription] = useState("");
+  const [status, setStatus] = useState<"active" | "inactive">("active");
 
-  // Variants state
-  const [variants, setVariants] = useState<Variant[]>([])
-  const [deletedVariantIds, setDeletedVariantIds] = useState<string[]>([])
-  const [deletedAttributeIds, setDeletedAttributeIds] = useState<string[]>([])
+  // Variants
+  const [variants, setVariants] = useState<Variant[]>([]);
+
+  // Basic attributes
+  const [basicAttributes, setBasicAttributes] = useState<VariantAttribute[]>([{ key: "", value: "" }]);
+
+  // Categories and Subcategories
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
+  const [category, setCategory] = useState("");
+  const [subcategory, setSubcategory] = useState("");
 
   // Product images
-  const [mainImageFile, setMainImageFile] = useState<File | null>(null)
-  const [mainImagePreview, setMainImagePreview] = useState("")
-  const [isMainImageChanged, setIsMainImageChanged] = useState(false)
-  const [galleryFiles, setGalleryFiles] = useState<File[]>([])
-  const [galleryPreviews, setGalleryPreviews] = useState<string[]>([])
-  const [deletedGalleryImages, setDeletedGalleryImages] = useState<string[]>([])
-  const [newGalleryImages, setNewGalleryImages] = useState<{ file: File; preview: string }[]>([])
-
-  // Loading states
-  const [isLoading, setIsLoading] = useState(true)
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [mainImageFile, setMainImageFile] = useState<File | null>(null);
+  const [mainImagePreview, setMainImagePreview] = useState("");
+  const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
+  const [galleryPreviews, setGalleryPreviews] = useState<string[]>([]);
 
   // Refs for file inputs
-  const mainImageInputRef = useRef<HTMLInputElement>(null)
-  const galleryInputRef = useRef<HTMLInputElement>(null)
-  const variantImageRefs = useRef<(HTMLInputElement | null)[]>([])
+  const mainImageInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const variantImageRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  // Create a ref callback for variant image inputs
-  const setVariantImageRef = useCallback(
-    (index: number) => (el: HTMLInputElement | null) => {
-      variantImageRefs.current[index] = el
-    },
-    [],
-  )
+  // Loading and submitting states
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Track deletions
+  const [deletedVariantIds, setDeletedVariantIds] = useState<string[]>([]);
+  const [deletedAttributeIds, setDeletedAttributeIds] = useState<string[]>([]);
+  const [deletedGalleryImages, setDeletedGalleryImages] = useState<string[]>([]);
+
+  // Fetch categories
+  useEffect(() => {
+    if (!restaurantId) return;
+
+    const fetchCategories = async () => {
+      const q = query(
+        collection(posDb, "categories"),
+        where("restaurantId", "==", restaurantId),
+        orderBy("name"),
+      );
+      const snapshot = await getDocs(q);
+      const cats = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        name: doc.data().name,
+        restaurantId: doc.data().restaurantId,
+      }));
+      setCategories(cats);
+    };
+
+    fetchCategories().catch((error) => {
+      console.error("Error fetching categories:", error);
+      toast.error("Failed to load categories");
+    });
+  }, [restaurantId]);
+
+  // Fetch subcategories when category changes
+  useEffect(() => {
+    if (!restaurantId || !category) {
+      setSubcategories([]);
+      return;
+    }
+
+    const selectedCategory = categories.find((cat) => cat.name === category);
+    if (selectedCategory) {
+      const fetchSubcategories = async () => {
+        const q = query(
+          collection(posDb, "subcategories"),
+          where("categoryId", "==", selectedCategory.id),
+          where("restaurantId", "==", restaurantId),
+          orderBy("name"),
+        );
+        const snapshot = await getDocs(q);
+        const subcats = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          name: doc.data().name,
+          categoryId: doc.data().categoryId,
+          restaurantId: doc.data().restaurantId,
+        }));
+        setSubcategories(subcats);
+      };
+
+      fetchSubcategories().catch((error) => {
+        console.error("Error fetching subcategories:", error);
+        toast.error("Failed to load subcategories");
+      });
+    }
+  }, [category, categories, restaurantId]);
 
   // Fetch product data
   useEffect(() => {
+    if (!restaurantId || !productId) return;
+
     const fetchProduct = async () => {
       try {
-        setIsLoading(true)
+        setIsLoading(true);
 
-        // Fetch product data
-        const productDoc = await getDoc(doc(posDb, "products", productId)) // Updated to posDb
-
+        // Fetch product
+        const productDoc = await getDoc(doc(posDb, "products", productId));
         if (!productDoc.exists()) {
-          toast.error("Product not found")
-          router.push("/pos/products")
-          return
+          toast.error("Product not found");
+          router.push("/pos/products");
+          return;
         }
 
-        const productData = productDoc.data()
-
-        // Set product state
-        setProduct({
-          id: productId,
-          name: productData.name || "",
-          sku: productData.sku || "",
-          base_price: productData.base_price?.toString() || "",
-          description: productData.description || "",
-          status: productData.status || "active",
-          category: productData.category || "",
-          subcategory: productData.subcategory || "",
-          main_image_url: productData.main_image_url || "",
-          gallery_images: productData.gallery_images || [],
-        })
-
-        // Set main image preview if exists
-        if (productData.main_image_url) {
-          setMainImagePreview(productData.main_image_url)
-        }
-
-        // Set gallery previews if exist
-        if (productData.gallery_images && productData.gallery_images.length > 0) {
-          setGalleryPreviews(productData.gallery_images)
-        }
+        const productData = productDoc.data();
+        setName(productData.name || "");
+        setSku(productData.sku || "");
+        setBasePrice(productData.base_price?.toString() || "");
+        setDescription(productData.description || "");
+        setStatus(productData.status || "active");
+        setCategory(productData.category || "");
+        setSubcategory(productData.subcategory || "");
+        setBasicAttributes(productData.attributes || [{ key: "", value: "" }]);
+        setMainImagePreview(productData.main_image_url || "");
+        setGalleryPreviews(productData.gallery_images || []);
 
         // Fetch variants
-        const variantsQuery = query(collection(posDb, "variants"), where("product_id", "==", productId)) // Updated to posDb
-        const variantsSnapshot = await getDocs(variantsQuery)
+        const variantsQuery = query(
+          collection(posDb, "variants"),
+          where("product_id", "==", productId),
+          where("productRestaurantId", "==", restaurantId),
+        );
+        const variantsSnapshot = await getDocs(variantsQuery);
 
-        const variantsPromises = variantsSnapshot.docs.map(async (variantDoc) => {
-          const variantData = variantDoc.data()
+        const variantsData = await Promise.all(
+          variantsSnapshot.docs.map(async (variantDoc) => {
+            const variantData = variantDoc.data();
 
-          // Fetch attributes for this variant
-          const attributesQuery = query(collection(posDb, "variant_attributes"), where("variant_id", "==", variantDoc.id)) // Updated to posDb
-          const attributesSnapshot = await getDocs(attributesQuery)
+            // Fetch variant attributes
+            const attributesQuery = query(
+              collection(posDb, "variant_attributes"),
+              where("variant_id", "==", variantDoc.id),
+              where("variantRestaurantId", "==", restaurantId),
+            );
+            const attributesSnapshot = await getDocs(attributesQuery);
+            const attributes = attributesSnapshot.docs.map((attrDoc) => ({
+              id: attrDoc.id,
+              key: attrDoc.data().key_name,
+              value: attrDoc.data().value_name,
+            }));
 
-          const attributes = attributesSnapshot.docs.map((attrDoc) => ({
-            id: attrDoc.id,
-            key_name: attrDoc.data().key_name,
-            value_name: attrDoc.data().value_name,
-            key: attrDoc.data().key_name,
-            value: attrDoc.data().value_name,
-          }))
+            return {
+              id: variantDoc.id,
+              name: variantData.name || "",
+              price: variantData.price?.toString() || "",
+              stock: variantData.stock?.toString() || "",
+              attributes: attributes.length > 0 ? attributes : [{ key: "", value: "" }],
+              imageFile: null,
+              imagePreview: variantData.image_url || "",
+              image_url: variantData.image_url || "",
+            };
+          }),
+        );
 
-          return {
-            id: variantDoc.id,
-            name: variantData.name || "",
-            price: variantData.price?.toString() || "",
-            stock: variantData.stock?.toString() || "",
-            attributes: attributes.length > 0 ? attributes : [{ key: "", value: "" }],
-            image_url: variantData.image_url || "",
-            imageFile: null,
-            imagePreview: variantData.image_url || "",
-            isImageChanged: false,
-          }
-        })
-
-        const variantsData = await Promise.all(variantsPromises)
-        setVariants(variantsData)
-
-        setIsLoading(false)
+        setVariants(variantsData);
       } catch (error) {
-        console.error("Error fetching product:", error)
-        toast.error("Failed to load product")
-        router.push("/pos/products")
+        console.error("Error fetching product:", error);
+        toast.error("Failed to load product");
+      } finally {
+        setIsLoading(false);
       }
-    }
+    };
 
-    fetchProduct()
-  }, [productId, router])
+    fetchProduct();
+  }, [productId, restaurantId, router]);
 
-  // Handle main image selection
+  // Handle main image change
   const handleMainImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0]
-      setMainImageFile(file)
-      setMainImagePreview(URL.createObjectURL(file))
-      setIsMainImageChanged(true)
+      const file = e.target.files[0];
+      setMainImageFile(file);
+      setMainImagePreview(URL.createObjectURL(file));
     }
-  }
+  };
 
-  // Handle gallery images selection
+  // Handle gallery images change
   const handleGalleryImagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const newFiles = Array.from(e.target.files)
-      const newFilesWithPreviews = newFiles.map((file) => ({
-        file,
-        preview: URL.createObjectURL(file),
-      }))
-
-      setNewGalleryImages((prev) => [...prev, ...newFilesWithPreviews])
+      const newFiles = Array.from(e.target.files);
+      const newPreviews = newFiles.map((file) => URL.createObjectURL(file));
+      setGalleryFiles((prev) => [...prev, ...newFiles]);
+      setGalleryPreviews((prev) => [...prev, ...newPreviews]);
     }
-  }
+  };
 
-  // Remove gallery image
-  const removeGalleryImage = (index: number) => {
-    const currentGalleryImages = [...galleryPreviews]
-    const imageToRemove = currentGalleryImages[index]
-
-    // Add to deleted images if it's an existing image
-    if (imageToRemove && !newGalleryImages.some((img) => img.preview === imageToRemove)) {
-      setDeletedGalleryImages((prev) => [...prev, imageToRemove])
-    }
-
-    // Remove from previews
-    const newPreviews = [...galleryPreviews]
-    newPreviews.splice(index, 1)
-    setGalleryPreviews(newPreviews)
-  }
-
-  // Remove new gallery image
-  const removeNewGalleryImage = (index: number) => {
-    const newImages = [...newGalleryImages]
-
-    // Revoke the object URL to avoid memory leaks
-    URL.revokeObjectURL(newImages[index].preview)
-
-    newImages.splice(index, 1)
-    setNewGalleryImages(newImages)
-  }
-
-  // Handle variant image selection
+  // Handle variant image change
   const handleVariantImageChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0]
-      const newVariants = [...variants]
-
-      // If there was a previous preview from a file (not from storage), revoke it
-      if (newVariants[index].isImageChanged && newVariants[index].imagePreview) {
-        URL.revokeObjectURL(newVariants[index].imagePreview)
+      const file = e.target.files[0];
+      const newVariants = [...variants];
+      if (newVariants[index].imagePreview && newVariants[index].imagePreview.startsWith("blob:")) {
+        URL.revokeObjectURL(newVariants[index].imagePreview);
       }
-
       newVariants[index] = {
         ...newVariants[index],
         imageFile: file,
         imagePreview: URL.createObjectURL(file),
-        isImageChanged: true,
-      }
-      setVariants(newVariants)
+      };
+      setVariants(newVariants);
     }
-  }
+  };
+
+  // Remove gallery image
+  const removeGalleryImage = (index: number) => {
+    const newFiles = [...galleryFiles];
+    const newPreviews = [...galleryPreviews];
+    const removedUrl = newPreviews[index];
+
+    if (removedUrl && !removedUrl.startsWith("blob:")) {
+      setDeletedGalleryImages((prev) => [...prev, removedUrl]);
+    } else if (removedUrl) {
+      URL.revokeObjectURL(removedUrl);
+    }
+
+    newFiles.splice(index, 1);
+    newPreviews.splice(index, 1);
+    setGalleryFiles(newFiles);
+    setGalleryPreviews(newPreviews);
+  };
 
   // Remove variant image
   const removeVariantImage = (index: number) => {
-    const newVariants = [...variants]
-
-    // If there was a preview from a file (not from storage), revoke it
-    if (newVariants[index].isImageChanged && newVariants[index].imagePreview) {
-      URL.revokeObjectURL(newVariants[index].imagePreview)
+    const newVariants = [...variants];
+    if (newVariants[index].imagePreview && newVariants[index].imagePreview.startsWith("blob:")) {
+      URL.revokeObjectURL(newVariants[index].imagePreview);
     }
-
     newVariants[index] = {
       ...newVariants[index],
       imageFile: null,
       imagePreview: "",
-      image_url: "",
-      isImageChanged: true,
-    }
-
-    setVariants(newVariants)
-  }
+    };
+    setVariants(newVariants);
+  };
 
   // Add a new variant
   const addVariant = () => {
     setVariants([
       ...variants,
       {
-        id: `new-${Date.now()}`,
         name: "",
         price: "",
         stock: "",
         attributes: [{ key: "", value: "" }],
         imageFile: null,
         imagePreview: "",
-        isImageChanged: false,
       },
-    ])
-  }
+    ]);
+  };
 
   // Remove a variant
   const removeVariant = (index: number) => {
-    const variantToRemove = variants[index]
+    const newVariants = [...variants];
+    const variantToRemove = newVariants[index];
 
-    // If it's an existing variant (has an ID that doesn't start with "new-"), add to deleted list
-    if (variantToRemove.id && !variantToRemove.id.startsWith("new-")) {
-      setDeletedVariantIds((prev) => [...prev, variantToRemove.id])
-
-      // Add all attributes to deleted list
-      variantToRemove.attributes.forEach((attr) => {
-        if (attr.id) {
-          setDeletedAttributeIds((prev) => [...prev, attr.id as string])
-        }
-      })
+    if (variantToRemove.id) {
+      setDeletedVariantIds((prev) => [...prev, variantToRemove.id]);
+      const attrIds = variantToRemove.attributes
+        .filter((attr) => attr.id)
+        .map((attr) => attr.id as string);
+      setDeletedAttributeIds((prev) => [...prev, ...attrIds]);
     }
 
-    // If there was a preview from a file (not from storage), revoke it
-    if (variantToRemove.isImageChanged && variantToRemove.imagePreview) {
-      URL.revokeObjectURL(variantToRemove.imagePreview)
+    if (variantToRemove.imagePreview && variantToRemove.imagePreview.startsWith("blob:")) {
+      URL.revokeObjectURL(variantToRemove.imagePreview);
     }
 
-    const newVariants = [...variants]
-    newVariants.splice(index, 1)
-
-    if (newVariants.length === 0) {
-      // Add a default empty variant if all are removed
-      setVariants([
-        {
-          id: `new-${Date.now()}`,
-          name: "",
-          price: "",
-          stock: "",
-          attributes: [{ key: "", value: "" }],
-          imageFile: null,
-          imagePreview: "",
-          isImageChanged: false,
-        },
-      ])
-    } else {
-      setVariants(newVariants)
-    }
-  }
+    newVariants.splice(index, 1);
+    setVariants(newVariants);
+  };
 
   // Update variant field
   const updateVariant = (index: number, field: keyof Variant, value: string) => {
-    const newVariants = [...variants]
+    const newVariants = [...variants];
     newVariants[index] = {
       ...newVariants[index],
       [field]: value,
-    }
-    setVariants(newVariants)
-  }
+    };
+    setVariants(newVariants);
+  };
 
   // Add attribute to variant
   const addAttribute = (variantIndex: number) => {
-    const newVariants = [...variants]
+    const newVariants = [...variants];
     newVariants[variantIndex] = {
       ...newVariants[variantIndex],
       attributes: [...newVariants[variantIndex].attributes, { key: "", value: "" }],
-    }
-    setVariants(newVariants)
-  }
+    };
+    setVariants(newVariants);
+  };
 
   // Remove attribute from variant
   const removeAttribute = (variantIndex: number, attrIndex: number) => {
-    const newVariants = [...variants]
-    const attrToRemove = newVariants[variantIndex].attributes[attrIndex]
+    const newVariants = [...variants];
+    const attrToRemove = newVariants[variantIndex].attributes[attrIndex];
 
-    // If it's an existing attribute (has an ID), add to deleted list
     if (attrToRemove.id) {
-      setDeletedAttributeIds((prev) => [...prev, attrToRemove.id as string])
+      setDeletedAttributeIds((prev) => [...prev, attrToRemove.id]);
     }
 
     if (newVariants[variantIndex].attributes.length > 1) {
-      const newAttributes = [...newVariants[variantIndex].attributes]
-      newAttributes.splice(attrIndex, 1)
+      const newAttributes = [...newVariants[variantIndex].attributes];
+      newAttributes.splice(attrIndex, 1);
       newVariants[variantIndex] = {
         ...newVariants[variantIndex],
         attributes: newAttributes,
-      }
-      setVariants(newVariants)
+      };
+      setVariants(newVariants);
     }
-  }
+  };
 
   // Update attribute
-  const updateAttribute = (variantIndex: number, attrIndex: number, field: "key" | "value", value: string) => {
-    const newVariants = [...variants]
-    const newAttributes = [...newVariants[variantIndex].attributes]
+  const updateAttribute = (
+    variantIndex: number,
+    attrIndex: number,
+    field: keyof VariantAttribute,
+    value: string,
+  ) => {
+    const newVariants = [...variants];
+    const newAttributes = [...newVariants[variantIndex].attributes];
     newAttributes[attrIndex] = {
       ...newAttributes[attrIndex],
       [field]: value,
-      [field === "key" ? "key_name" : "value_name"]: value,
-    }
+    };
     newVariants[variantIndex] = {
       ...newVariants[variantIndex],
       attributes: newAttributes,
+    };
+    setVariants(newVariants);
+  };
+
+  // Helper to set variant image ref
+  const setVariantImageRef = (index: number) => (el: HTMLInputElement | null) => {
+    variantImageRefs.current[index] = el;
+  };
+
+  // Basic attributes handlers
+  const addBasicAttribute = () => {
+    setBasicAttributes([...basicAttributes, { key: "", value: "" }]);
+  };
+
+  const removeBasicAttribute = (index: number) => {
+    if (basicAttributes.length > 1) {
+      const newAttributes = [...basicAttributes];
+      newAttributes.splice(index, 1);
+      setBasicAttributes(newAttributes);
     }
-    setVariants(newVariants)
-  }
+  };
+
+  const updateBasicAttribute = (index: number, field: keyof VariantAttribute, value: string) => {
+    const newAttributes = [...basicAttributes];
+    newAttributes[index] = {
+      ...newAttributes[index],
+      [field]: value,
+    };
+    setBasicAttributes(newAttributes);
+  };
 
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsSubmitting(true)
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    if (!restaurantId) {
+      toast.error("No restaurant ID found. Please log in again.");
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
-      // Validate base product
-      if (!product.name || !product.sku || !product.base_price) {
-        toast.error("Please fill in all required fields")
-        setIsSubmitting(false)
-        return
+      if (!name || !sku || !basePrice) {
+        toast.error("Please fill in all required fields");
+        setIsSubmitting(false);
+        return;
       }
 
-      // Validate variants
-      for (const variant of variants) {
-        if (!variant.name || !variant.price || !variant.stock) {
-          toast.error("Please fill in all variant fields")
-          setIsSubmitting(false)
-          return
+      for (const attr of basicAttributes) {
+        if (!attr.key || !attr.value) {
+          toast.error("Please fill in all attribute fields");
+          setIsSubmitting(false);
+          return;
         }
+      }
 
-        for (const attr of variant.attributes) {
-          if (!attr.key || !attr.value) {
-            toast.error("Please fill in all attribute fields")
-            setIsSubmitting(false)
-            return
+      if (variants.length > 0) {
+        for (const variant of variants) {
+          if (!variant.name || !variant.price || !variant.stock) {
+            toast.error("Please fill in all variant fields");
+            setIsSubmitting(false);
+            return;
+          }
+          for (const attr of variant.attributes) {
+            if (!attr.key || !attr.value) {
+              toast.error("Please fill in all attribute fields");
+              setIsSubmitting(false);
+              return;
+            }
           }
         }
       }
 
-      // Handle main image changes
-      let mainImageUrl = product.main_image_url || ""
-      if (isMainImageChanged && mainImageFile) {
-        // Delete old image if exists and has an ID
-        if (product.main_image_url) {
-          const imageId = getImageIdFromUrl(product.main_image_url)
-          if (imageId) {
-            await deleteImage(imageId)
-          }
+      // Handle main image
+      let mainImageUrl = mainImagePreview;
+      if (mainImageFile) {
+        if (mainImagePreview && !mainImagePreview.startsWith("blob:")) {
+          const oldImageId = getImageIdFromUrl(mainImagePreview);
+          if (oldImageId) await deleteImage(oldImageId);
         }
-
-        // Save new image
-        const imageId = generateImageId("product_main")
-        mainImageUrl = await saveImage(imageId, mainImageFile)
-      } else if (isMainImageChanged && !mainImageFile) {
-        // Image was removed
-        if (product.main_image_url) {
-          const imageId = getImageIdFromUrl(product.main_image_url)
-          if (imageId) {
-            await deleteImage(imageId)
-          }
-        }
-        mainImageUrl = ""
+        const imageId = generateImageId("product_main");
+        mainImageUrl = await saveImage(imageId, mainImageFile);
+      } else if (!mainImagePreview && mainImagePreview !== "") {
+        const oldImageId = getImageIdFromUrl(mainImagePreview);
+        if (oldImageId) await deleteImage(oldImageId);
+        mainImageUrl = "";
       }
 
-      // Handle gallery image changes
-      let galleryUrls = [...galleryPreviews]
-
-      // Remove deleted gallery images
-      for (const imageUrl of deletedGalleryImages) {
-        const imageId = getImageIdFromUrl(imageUrl)
-        if (imageId) {
-          await deleteImage(imageId)
+      // Handle gallery images
+      let galleryUrls = [...galleryPreviews];
+      for (const url of deletedGalleryImages) {
+        const imageId = getImageIdFromUrl(url);
+        if (imageId) await deleteImage(imageId);
+        galleryUrls = galleryUrls.filter((u) => u !== url);
+      }
+      for (const file of galleryFiles) {
+        if (!galleryUrls.some((url) => url === URL.createObjectURL(file))) {
+          const imageId = generateImageId("product_gallery");
+          const url = await saveImage(imageId, file);
+          galleryUrls.push(url);
         }
-        galleryUrls = galleryUrls.filter((url) => url !== imageUrl)
       }
 
-      // Add new gallery images
-      for (const { file } of newGalleryImages) {
-        const imageId = generateImageId("product_gallery")
-        const url = await saveImage(imageId, file)
-        galleryUrls.push(url)
-      }
-
-      // Update product in Firestore
-      await updateDoc(doc(posDb, "products", productId), { // Updated to posDb
-        name: product.name,
-        sku: product.sku,
-        base_price: Number.parseFloat(product.base_price),
-        description: product.description,
-        status: product.status,
-        category: product.category,
-        subcategory: product.subcategory,
+      // Update product
+      await updateDoc(doc(posDb, "products", productId), {
+        name,
+        sku,
+        base_price: Number.parseFloat(basePrice),
+        description,
+        status,
+        category,
+        subcategory,
         main_image_url: mainImageUrl,
         gallery_images: galleryUrls,
+        attributes: basicAttributes,
+        restaurantId,
         updated_at: new Date(),
-      })
+      });
 
-      // Delete removed variants
+      // Delete removed variants and attributes
       for (const variantId of deletedVariantIds) {
-        await deleteDoc(doc(posDb, "variants", variantId)) // Updated to posDb
+        await deleteDoc(doc(posDb, "variants", variantId));
       }
-
-      // Delete removed attributes
       for (const attrId of deletedAttributeIds) {
-        await deleteDoc(doc(posDb, "variant_attributes", attrId)) // Updated to posDb
+        await deleteDoc(doc(posDb, "variant_attributes", attrId));
       }
 
       // Update or add variants
       for (const variant of variants) {
-        let variantRef
-
-        // Handle variant image
-        let variantImageUrl = variant.image_url || ""
-        if (variant.isImageChanged) {
-          // Delete old image if exists
+        let variantImageUrl = variant.image_url || "";
+        if (variant.imageFile) {
           if (variant.image_url) {
-            const imageId = getImageIdFromUrl(variant.image_url)
-            if (imageId) {
-              await deleteImage(imageId)
-            }
+            const oldImageId = getImageIdFromUrl(variant.image_url);
+            if (oldImageId) await deleteImage(oldImageId);
           }
-
-          // Save new image if exists
-          if (variant.imageFile) {
-            const imageId = generateImageId("variant")
-            variantImageUrl = await saveImage(imageId, variant.imageFile)
-          } else {
-            variantImageUrl = ""
-          }
+          const imageId = generateImageId("variant");
+          variantImageUrl = await saveImage(imageId, variant.imageFile);
+        } else if (!variant.imagePreview && variant.image_url) {
+          const oldImageId = getImageIdFromUrl(variant.image_url);
+          if (oldImageId) await deleteImage(oldImageId);
+          variantImageUrl = "";
         }
 
-        if (variant.id.startsWith("new-")) {
-          // Add new variant
-          variantRef = await addDoc(collection(posDb, "variants"), { // Updated to posDb
-            product_id: productId,
-            name: variant.name,
-            price: Number.parseFloat(variant.price),
-            stock: Number.parseInt(variant.stock),
-            image_url: variantImageUrl,
-          })
-        } else {
-          // Update existing variant
-          variantRef = doc(posDb, "variants", variant.id) // Updated to posDb
+        let variantRef;
+        if (variant.id) {
+          variantRef = doc(posDb, "variants", variant.id);
           await updateDoc(variantRef, {
             name: variant.name,
             price: Number.parseFloat(variant.price),
             stock: Number.parseInt(variant.stock),
             image_url: variantImageUrl,
-          })
+            productRestaurantId: restaurantId,
+          });
+        } else {
+          variantRef = await addDoc(collection(posDb, "variants"), {
+            product_id: productId,
+            name: variant.name,
+            price: Number.parseFloat(variant.price),
+            stock: Number.parseInt(variant.stock),
+            image_url: variantImageUrl,
+            productRestaurantId: restaurantId,
+          });
         }
 
-        // Handle attributes
         for (const attr of variant.attributes) {
           if (attr.id) {
-            // Update existing attribute if not in deleted list
-            if (!deletedAttributeIds.includes(attr.id)) {
-              await updateDoc(doc(posDb, "variant_attributes", attr.id), { // Updated to posDb
-                key_name: attr.key,
-                value_name: attr.value,
-              })
-            }
+            await updateDoc(doc(posDb, "variant_attributes", attr.id), {
+              key_name: attr.key,
+              value_name: attr.value,
+              variantRestaurantId: restaurantId,
+            });
           } else {
-            // Add new attribute
-            await addDoc(collection(posDb, "variant_attributes"), { // Updated to posDb
+            await addDoc(collection(posDb, "variant_attributes"), {
               variant_id: variantRef.id,
               key_name: attr.key,
               value_name: attr.value,
-            })
+              variantRestaurantId: restaurantId,
+            });
           }
         }
       }
 
-      // Clean up object URLs
-      if (mainImageFile && mainImagePreview.startsWith("blob:")) {
-        URL.revokeObjectURL(mainImagePreview)
-      }
-
-      newGalleryImages.forEach(({ preview }) => URL.revokeObjectURL(preview))
-
+      // Cleanup
+      if (mainImagePreview && mainImagePreview.startsWith("blob:")) URL.revokeObjectURL(mainImagePreview);
+      galleryPreviews.forEach((url) => {
+        if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+      });
       variants.forEach((variant) => {
-        if (variant.isImageChanged && variant.imagePreview.startsWith("blob:")) {
-          URL.revokeObjectURL(variant.imagePreview)
-        }
-      })
+        if (variant.imagePreview && variant.imagePreview.startsWith("blob:")) URL.revokeObjectURL(variant.imagePreview);
+      });
 
-      toast.success("Product updated successfully")
-      router.push("/pos/products") // Updated redirect path
-    } catch (error) {
-      console.error("Error updating product:", error)
-      toast.error("Failed to update product")
+      toast.success("Product updated successfully");
+      router.push("/pos/products");
+    } catch (error: any) {
+      console.error("Error updating product:", error.message, error.code);
+      toast.error(`Failed to update product: ${error.message}`);
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
-  }
+  };
 
   if (isLoading) {
     return (
@@ -590,7 +609,11 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
           <p>Loading product...</p>
         </div>
       </div>
-    )
+    );
+  }
+
+  if (!restaurantId) {
+    return <div>Please log in to edit a product.</div>;
   }
 
   return (
@@ -604,7 +627,6 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8">
-        {/* Base Product Information */}
         <Card>
           <CardHeader>
             <CardTitle>Basic Information</CardTitle>
@@ -617,21 +639,20 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
                 </Label>
                 <Input
                   id="name"
-                  value={product.name}
-                  onChange={(e) => setProduct({ ...product, name: e.target.value })}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
                   placeholder="Enter product name"
                   required
                 />
               </div>
-
               <div className="space-y-2">
                 <Label htmlFor="sku">
                   SKU <span className="text-red-500">*</span>
                 </Label>
                 <Input
                   id="sku"
-                  value={product.sku}
-                  onChange={(e) => setProduct({ ...product, sku: e.target.value })}
+                  value={sku}
+                  onChange={(e) => setSku(e.target.value)}
                   placeholder="Enter unique SKU"
                   required
                 />
@@ -647,22 +668,21 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
                   id="basePrice"
                   type="number"
                   step="0.01"
-                  value={product.base_price}
-                  onChange={(e) => setProduct({ ...product, base_price: e.target.value })}
+                  value={basePrice}
+                  onChange={(e) => setBasePrice(e.target.value)}
                   placeholder="0.00"
                   required
                 />
               </div>
-
               <div className="space-y-2">
                 <Label htmlFor="status">Status</Label>
                 <div className="flex items-center space-x-2">
                   <Switch
                     id="status"
-                    checked={product.status === "active"}
-                    onCheckedChange={(checked) => setProduct({ ...product, status: checked ? "active" : "inactive" })}
+                    checked={status === "active"}
+                    onCheckedChange={(checked) => setStatus(checked ? "active" : "inactive")}
                   />
-                  <span>{product.status === "active" ? "Active" : "Inactive"}</span>
+                  <span>{status === "active" ? "Active" : "Inactive"}</span>
                 </div>
               </div>
             </div>
@@ -671,8 +691,8 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
               <Label htmlFor="description">Description</Label>
               <Textarea
                 id="description"
-                value={product.description}
-                onChange={(e) => setProduct({ ...product, description: e.target.value })}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
                 placeholder="Enter product description"
                 rows={3}
               />
@@ -681,73 +701,87 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="category">Category</Label>
-                <Select value={product.category} onValueChange={(value) => setProduct({ ...product, category: value })}>
+                <Select value={category} onValueChange={setCategory}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select a category" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="electronics">Electronics</SelectItem>
-                    <SelectItem value="clothing">Clothing</SelectItem>
-                    <SelectItem value="food">Food & Beverages</SelectItem>
-                    <SelectItem value="furniture">Furniture</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
+                    {categories.map((cat) => (
+                      <SelectItem key={cat.id} value={cat.name}>
+                        {cat.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="subcategory">Subcategory</Label>
-                <Select
-                  value={product.subcategory}
-                  onValueChange={(value) => setProduct({ ...product, subcategory: value })}
-                >
+                <Select value={subcategory} onValueChange={setSubcategory} disabled={!category}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select a subcategory" />
                   </SelectTrigger>
                   <SelectContent>
-                    {product.category === "electronics" && (
-                      <>
-                        <SelectItem value="phones">Phones</SelectItem>
-                        <SelectItem value="computers">Computers</SelectItem>
-                        <SelectItem value="accessories">Accessories</SelectItem>
-                      </>
+                    {subcategories.length > 0 ? (
+                      subcategories.map((subcat) => (
+                        <SelectItem key={subcat.id} value={subcat.name}>
+                          {subcat.name}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="no-subcategories" disabled>
+                        No subcategories available
+                      </SelectItem>
                     )}
-                    {product.category === "clothing" && (
-                      <>
-                        <SelectItem value="shirts">Shirts</SelectItem>
-                        <SelectItem value="pants">Pants</SelectItem>
-                        <SelectItem value="shoes">Shoes</SelectItem>
-                      </>
-                    )}
-                    {product.category === "food" && (
-                      <>
-                        <SelectItem value="beverages">Beverages</SelectItem>
-                        <SelectItem value="snacks">Snacks</SelectItem>
-                        <SelectItem value="meals">Meals</SelectItem>
-                      </>
-                    )}
-                    {product.category === "furniture" && (
-                      <>
-                        <SelectItem value="chairs">Chairs</SelectItem>
-                        <SelectItem value="tables">Tables</SelectItem>
-                        <SelectItem value="beds">Beds</SelectItem>
-                      </>
-                    )}
-                    <SelectItem value="other">Other</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
+
+            <div className="space-y-2 mt-4">
+              <div className="flex justify-between items-center">
+                <Label>Attributes</Label>
+                <Button type="button" onClick={addBasicAttribute} variant="outline" size="sm">
+                  <PlusCircle className="h-4 w-4 mr-2" />
+                  Add Attribute
+                </Button>
+              </div>
+              {basicAttributes.map((attr, attrIndex) => (
+                <div key={attrIndex} className="flex items-center gap-2">
+                  <Input
+                    value={attr.key}
+                    onChange={(e) => updateBasicAttribute(attrIndex, "key", e.target.value)}
+                    placeholder="Attribute (e.g. Size)"
+                    className="flex-1"
+                  />
+                  <Input
+                    value={attr.value}
+                    onChange={(e) => updateBasicAttribute(attrIndex, "value", e.target.value)}
+                    placeholder="Value (e.g. Large)"
+                    className="flex-1"
+                  />
+                  {basicAttributes.length > 1 && (
+                    <Button
+                      type="button"
+                      onClick={() => removeBasicAttribute(attrIndex)}
+                      variant="ghost"
+                      size="icon"
+                      className="text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
 
-        {/* Product Images */}
         <Card>
           <CardHeader>
             <CardTitle>Product Images</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Main Product Image */}
             <div className="space-y-2">
               <Label>Main Product Image</Label>
               <div className="flex items-start gap-4">
@@ -768,12 +802,11 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
                         size="icon"
                         className="absolute top-1 right-1 h-6 w-6 bg-white rounded-full"
                         onClick={() => {
-                          if (mainImagePreview.startsWith("blob:")) {
-                            URL.revokeObjectURL(mainImagePreview)
+                          if (mainImagePreview && mainImagePreview.startsWith("blob:")) {
+                            URL.revokeObjectURL(mainImagePreview);
                           }
-                          setMainImageFile(null)
-                          setMainImagePreview("")
-                          setIsMainImageChanged(true)
+                          setMainImageFile(null);
+                          setMainImagePreview("");
                         }}
                       >
                         <X className="h-4 w-4" />
@@ -793,21 +826,14 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
                     </>
                   )}
                 </div>
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500">
-                    This will be the primary image shown in product listings and at the top of the product detail page.
-                  </p>
-                </div>
               </div>
             </div>
 
-            {/* Gallery Images */}
             <div className="space-y-2">
               <Label>Gallery Images</Label>
               <div className="flex flex-wrap gap-4">
-                {/* Existing gallery images */}
                 {galleryPreviews.map((preview, index) => (
-                  <div key={`existing-${index}`} className="relative w-24 h-24 border rounded-md overflow-hidden">
+                  <div key={index} className="relative w-24 h-24 border rounded-md overflow-hidden">
                     <Image
                       src={preview || "/placeholder.svg"}
                       alt={`Gallery image ${index + 1}`}
@@ -825,29 +851,6 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
                     </Button>
                   </div>
                 ))}
-
-                {/* New gallery images */}
-                {newGalleryImages.map((image, index) => (
-                  <div key={`new-${index}`} className="relative w-24 h-24 border rounded-md overflow-hidden">
-                    <Image
-                      src={image.preview || "/placeholder.svg"}
-                      alt={`New gallery image ${index + 1}`}
-                      fill
-                      className="object-cover"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="absolute top-1 right-1 h-6 w-6 bg-white rounded-full"
-                      onClick={() => removeNewGalleryImage(index)}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-
-                {/* Add gallery image button */}
                 <div
                   className="w-24 h-24 border-2 border-dashed border-gray-300 rounded-md flex flex-col items-center justify-center cursor-pointer"
                   onClick={() => galleryInputRef.current?.click()}
@@ -864,166 +867,159 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
                   />
                 </div>
               </div>
-              <p className="text-xs text-gray-500">
-                Add up to 5 additional images to show your product from different angles.
-              </p>
             </div>
           </CardContent>
         </Card>
 
-        {/* Variants */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Product Variants</CardTitle>
+            <CardTitle>Product Variants (Optional)</CardTitle>
             <Button type="button" onClick={addVariant} variant="outline" size="sm">
               <PlusCircle className="h-4 w-4 mr-2" />
               Add Variant
             </Button>
           </CardHeader>
           <CardContent className="space-y-6">
-            {variants.map((variant, variantIndex) => (
-              <div key={variantIndex} className="border rounded-lg p-4 space-y-4">
-                <div className="flex justify-between items-center">
-                  <h3 className="font-medium">Variant {variantIndex + 1}</h3>
-                  <Button
-                    type="button"
-                    onClick={() => removeVariant(variantIndex)}
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive hover:text-destructive/90"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor={`variant-name-${variantIndex}`}>
-                      Variant Name <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      id={`variant-name-${variantIndex}`}
-                      value={variant.name}
-                      onChange={(e) => updateVariant(variantIndex, "name", e.target.value)}
-                      placeholder="e.g. Small, Red, 2.5L"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor={`variant-price-${variantIndex}`}>
-                      Price <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      id={`variant-price-${variantIndex}`}
-                      type="number"
-                      step="0.01"
-                      value={variant.price}
-                      onChange={(e) => updateVariant(variantIndex, "price", e.target.value)}
-                      placeholder="0.00"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor={`variant-stock-${variantIndex}`}>
-                      Stock <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      id={`variant-stock-${variantIndex}`}
-                      type="number"
-                      value={variant.stock}
-                      onChange={(e) => updateVariant(variantIndex, "stock", e.target.value)}
-                      placeholder="0"
-                      required
-                    />
-                  </div>
-                </div>
-
-                {/* Variant Image */}
-                <div className="space-y-2">
-                  <Label>Variant Image</Label>
-                  <div className="flex items-start gap-4">
-                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-2 w-24 h-24 flex flex-col items-center justify-center relative">
-                      {variant.imagePreview ? (
-                        <>
-                          <div className="relative w-full h-full">
-                            <Image
-                              src={variant.imagePreview || "/placeholder.svg"}
-                              alt={`Variant ${variantIndex + 1} image`}
-                              fill
-                              className="object-cover rounded-md"
-                            />
-                          </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="absolute top-1 right-1 h-5 w-5 bg-white rounded-full"
-                            onClick={() => removeVariantImage(variantIndex)}
-                          >
-                            <X className="h-3 w-3" />
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <ImageIcon className="h-8 w-8 text-gray-400 mb-1" />
-                          <span className="text-xs text-gray-500 text-center">Upload</span>
-                          <input
-                            ref={setVariantImageRef(variantIndex)}
-                            type="file"
-                            accept="image/*"
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                            onChange={(e) => handleVariantImageChange(variantIndex, e)}
-                          />
-                        </>
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-xs text-gray-500">Add a specific image for this variant (optional).</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
+            {variants.length === 0 ? (
+              <div className="text-center py-4 text-muted-foreground"></div>
+            ) : (
+              variants.map((variant, variantIndex) => (
+                <div key={variantIndex} className="border rounded-lg p-4 space-y-4">
                   <div className="flex justify-between items-center">
-                    <Label>Attributes</Label>
-                    <Button type="button" onClick={() => addAttribute(variantIndex)} variant="outline" size="sm">
-                      <PlusCircle className="h-4 w-4 mr-2" />
-                      Add Attribute
+                    <h3 className="font-medium">Variant {variantIndex + 1}</h3>
+                    <Button
+                      type="button"
+                      onClick={() => removeVariant(variantIndex)}
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
 
-                  {variant.attributes.map((attr, attrIndex) => (
-                    <div key={attrIndex} className="flex items-center gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor={`variant-name-${variantIndex}`}>
+                        Variant Name <span className="text-red-500">*</span>
+                      </Label>
                       <Input
-                        value={attr.key}
-                        onChange={(e) => updateAttribute(variantIndex, attrIndex, "key", e.target.value)}
-                        placeholder="Attribute (e.g. Size, Color)"
-                        className="flex-1"
+                        id={`variant-name-${variantIndex}`}
+                        value={variant.name}
+                        onChange={(e) => updateVariant(variantIndex, "name", e.target.value)}
+                        placeholder="e.g. Small, Red"
+                        required
                       />
-                      <Input
-                        value={attr.value}
-                        onChange={(e) => updateAttribute(variantIndex, attrIndex, "value", e.target.value)}
-                        placeholder="Value (e.g. Large, Red)"
-                        className="flex-1"
-                      />
-                      {variant.attributes.length > 1 && (
-                        <Button
-                          type="button"
-                          onClick={() => removeAttribute(variantIndex, attrIndex)}
-                          variant="ghost"
-                          size="icon"
-                          className="text-destructive hover:text-destructive/90"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
                     </div>
-                  ))}
+                    <div className="space-y-2">
+                      <Label htmlFor={`variant-price-${variantIndex}`}>
+                        Price <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id={`variant-price-${variantIndex}`}
+                        type="number"
+                        step="0.01"
+                        value={variant.price}
+                        onChange={(e) => updateVariant(variantIndex, "price", e.target.value)}
+                        placeholder="0.00"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`variant-stock-${variantIndex}`}>
+                        Stock <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id={`variant-stock-${variantIndex}`}
+                        type="number"
+                        value={variant.stock}
+                        onChange={(e) => updateVariant(variantIndex, "stock", e.target.value)}
+                        placeholder="0"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Variant Image</Label>
+                    <div className="flex items-start gap-4">
+                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-2 w-24 h-24 flex flex-col items-center justify-center relative">
+                        {variant.imagePreview ? (
+                          <>
+                            <div className="relative w-full h-full">
+                              <Image
+                                src={variant.imagePreview || "/placeholder.svg"}
+                                alt={`Variant ${variantIndex + 1} image`}
+                                fill
+                                className="object-cover rounded-md"
+                              />
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="absolute top-1 right-1 h-5 w-5 bg-white rounded-full"
+                              onClick={() => removeVariantImage(variantIndex)}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <ImageIcon className="h-8 w-8 text-gray-400 mb-1" />
+                            <span className="text-xs text-gray-500">Upload</span>
+                            <input
+                              ref={setVariantImageRef(variantIndex)}
+                              type="file"
+                              accept="image/*"
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                              onChange={(e) => handleVariantImageChange(variantIndex, e)}
+                            />
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <Label>Variant-Specific Attributes</Label>
+                      <Button type="button" onClick={() => addAttribute(variantIndex)} variant="outline" size="sm">
+                        <PlusCircle className="h-4 w-4 mr-2" />
+                        Add Attribute
+                      </Button>
+                    </div>
+                    {variant.attributes.map((attr, attrIndex) => (
+                      <div key={attrIndex} className="flex items-center gap-2">
+                        <Input
+                          value={attr.key}
+                          onChange={(e) => updateAttribute(variantIndex, attrIndex, "key", e.target.value)}
+                          placeholder="Attribute (e.g. Size)"
+                          className="flex-1"
+                        />
+                        <Input
+                          value={attr.value}
+                          onChange={(e) => updateAttribute(variantIndex, attrIndex, "value", e.target.value)}
+                          placeholder="Value (e.g. Large)"
+                          className="flex-1"
+                        />
+                        {variant.attributes.length > 1 && (
+                          <Button
+                            type="button"
+                            onClick={() => removeAttribute(variantIndex, attrIndex)}
+                            variant="ghost"
+                            size="icon"
+                            className="text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </CardContent>
         </Card>
 
@@ -1037,5 +1033,5 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
         </div>
       </form>
     </div>
-  )
+  );
 }

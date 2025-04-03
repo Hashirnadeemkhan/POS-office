@@ -24,7 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { format } from "date-fns"
-import { collection, query, getDocs, orderBy, doc, getDoc, type Timestamp } from "firebase/firestore" // Added doc, getDoc
+import { collection, query, getDocs, orderBy, where, doc, getDoc, type Timestamp } from "firebase/firestore"
 import { posDb } from "@/firebase/client"
 import { toast } from "sonner"
 import { useAuth } from "@/lib/auth-context"
@@ -47,12 +47,13 @@ interface Order {
   paymentMethod: string
   status: string
   createdAt: Timestamp
-  restaurantId?: string
+  restaurantId: string
 }
 
 export default function OrderHistory() {
   const router = useRouter()
-  const { logout, userId } = useAuth()
+  const { userId } = useAuth()
+  const restaurantId = userId
   const [orders, setOrders] = useState<Order[]>([])
   const [filteredOrders, setFilteredOrders] = useState<Order[]>([])
   const [searchQuery, setSearchQuery] = useState("")
@@ -86,7 +87,14 @@ export default function OrderHistory() {
   // Handle sign out
   const handleSignOut = async () => {
     try {
-      await logout()
+      const response = await fetch("/api/pos/logout", {
+        method: "POST",
+        headers: {
+          "x-session-token": localStorage.getItem("sessionToken") || "",
+        },
+      })
+      if (!response.ok) throw new Error("Logout failed")
+      localStorage.removeItem("sessionToken")
       router.replace("/pos/login")
     } catch (error) {
       console.error("Error signing out:", error)
@@ -97,12 +105,12 @@ export default function OrderHistory() {
   // Fetch restaurant details
   useEffect(() => {
     const fetchRestaurantData = async () => {
-      if (!userId) return
+      if (!restaurantId) return
       try {
-        const restaurantRef = doc(posDb, "restaurants", userId)
-        const restaurantSnap = await getDoc(restaurantRef) // Changed from getDocs to getDoc
-        if (restaurantSnap.exists()) { // .exists() works with DocumentSnapshot
-          const data = restaurantSnap.data() // .data() works with DocumentSnapshot
+        const restaurantRef = doc(posDb, "restaurants", restaurantId)
+        const restaurantSnap = await getDoc(restaurantRef)
+        if (restaurantSnap.exists()) {
+          const data = restaurantSnap.data()
           setRestaurantDetails({
             name: data.name || "RESTAURANT NAME",
             address: data.address || "123 Main Street, City",
@@ -115,19 +123,28 @@ export default function OrderHistory() {
       }
     }
     fetchRestaurantData()
-  }, [userId])
+  }, [restaurantId])
 
   // Fetch orders
   useEffect(() => {
     const fetchOrders = async () => {
-      if (!userId) return;
-      setIsLoading(true);
+      if (!restaurantId) {
+        toast.error("No restaurant ID found. Please log in again.")
+        setIsLoading(false)
+        return
+      }
+
+      setIsLoading(true)
       try {
-        const q = query(collection(posDb, "orders"), orderBy("createdAt", "desc"));
-        const querySnapshot = await getDocs(q);
-  
+        const q = query(
+          collection(posDb, "orders"),
+          where("restaurantId", "==", restaurantId), // Filter by restaurantId
+          orderBy("createdAt", "desc")
+        )
+        const querySnapshot = await getDocs(q)
+
         const ordersData: Order[] = querySnapshot.docs.map((doc) => {
-          const data = doc.data();
+          const data = doc.data()
           return {
             id: doc.id,
             items: data.items || [],
@@ -137,29 +154,27 @@ export default function OrderHistory() {
             paymentMethod: data.paymentMethod || "cash",
             status: data.status || "completed",
             createdAt: data.createdAt,
-            restaurantId: data.restaurantId || data.userId, // Handle both cases
-          };
-        });
-  
-        console.log("Fetched orders:", ordersData); // Log to check data
-        setOrders(ordersData);
-        setFilteredOrders(ordersData);
+            restaurantId: data.restaurantId,
+          }
+        })
+
+        setOrders(ordersData)
+        setFilteredOrders(ordersData)
       } catch (error) {
-        console.error("Error fetching orders:", error);
-        toast.error("Failed to load order history");
+        console.error("Error fetching orders:", error)
+        toast.error("Failed to load order history")
       } finally {
-        setIsLoading(false);
+        setIsLoading(false)
       }
-    };
-  
-    fetchOrders();
-  }, [userId]);
+    }
+
+    fetchOrders()
+  }, [restaurantId])
 
   // Apply filters
   useEffect(() => {
     let result = orders
 
-    // Search filter
     if (searchQuery) {
       result = result.filter(
         (order) =>
@@ -168,7 +183,6 @@ export default function OrderHistory() {
       )
     }
 
-    // Date filter
     if (dateFilter) {
       const filterDate = new Date(dateFilter)
       filterDate.setHours(0, 0, 0, 0)
@@ -180,12 +194,10 @@ export default function OrderHistory() {
       })
     }
 
-    // Status filter
     if (statusFilter !== "all") {
       result = result.filter((order) => order.status === statusFilter)
     }
 
-    // Payment method filter
     if (paymentMethodFilter !== "all") {
       result = result.filter((order) => order.paymentMethod === paymentMethodFilter)
     }
@@ -245,8 +257,8 @@ export default function OrderHistory() {
                 <div class="item">
                   <div>${item.name} x ${item.quantity}</div>
                   <div style="display: flex; justify-content: space-between;">
-                    <span>${item.quantity} x $${item.price.toFixed(2)}</span>
-                    <span>$${(item.price * item.quantity).toFixed(2)}</span>
+                    <span>${item.quantity} x Rs ${item.price.toFixed(2)}</span>
+                    <span>Rs ${(item.price * item.quantity).toFixed(2)}</span>
                   </div>
                 </div>
               `,
@@ -257,15 +269,15 @@ export default function OrderHistory() {
             <div class="totals">
               <div class="total-row">
                 <span>Subtotal:</span>
-                <span>$${selectedOrder.subtotal.toFixed(2)}</span>
+                <span>Rs ${selectedOrder.subtotal.toFixed(2)}</span>
               </div>
               <div class="total-row">
                 <span>Tax (10%):</span>
-                <span>$${selectedOrder.tax.toFixed(2)}</span>
+                <span>Rs ${selectedOrder.tax.toFixed(2)}</span>
               </div>
               <div class="total-row grand-total">
                 <span>TOTAL:</span>
-                <span>$${selectedOrder.total.toFixed(2)}</span>
+                <span>Rs ${selectedOrder.total.toFixed(2)}</span>
               </div>
               <div style="margin-top: 10px;">
                 <span>Payment Method: ${selectedOrder.paymentMethod.toUpperCase()}</span>
@@ -293,9 +305,13 @@ export default function OrderHistory() {
     setPaymentMethodFilter("all")
   }
 
+  if (!restaurantId) {
+    return <div>Please log in to access the Order History.</div>
+  }
+
+  // JSX remains unchanged
   return (
     <div className="min-h-screen bg-white flex flex-col">
-      {/* Header */}
       <header className="flex items-center justify-between px-4 py-2 border-b">
         <div className="flex items-center gap-2">
           <div className="bg-purple-600 text-white p-2 rounded-lg">
@@ -321,7 +337,6 @@ export default function OrderHistory() {
           </div>
         </div>
 
-        {/* Navigation */}
         <nav className="flex items-center gap-6">
           <Link href="/pos" className="flex flex-col items-center text-gray-500">
             <Home size={20} />
@@ -341,7 +356,6 @@ export default function OrderHistory() {
           </Link>
         </nav>
 
-        {/* User Info */}
         <div className="flex items-center gap-4">
           <div className="text-right">
             <p className="text-sm text-purple-600">{formattedDate}</p>
@@ -368,7 +382,6 @@ export default function OrderHistory() {
         </div>
       </header>
 
-      {/* Main Content */}
       <div className="flex-1 p-6">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold">Order History</h1>
@@ -377,7 +390,6 @@ export default function OrderHistory() {
           </Button>
         </div>
 
-        {/* Filters */}
         <div className="bg-white rounded-lg shadow mb-6">
           <div className="p-4 border-b">
             <div className="flex flex-wrap gap-4">
@@ -431,7 +443,6 @@ export default function OrderHistory() {
           </div>
         </div>
 
-        {/* Orders Table */}
         <div className="bg-white rounded-lg shadow">
           <Table>
             <TableHeader>
@@ -547,7 +558,6 @@ export default function OrderHistory() {
         </div>
       </div>
 
-      {/* Receipt Modal */}
       <Dialog open={showReceiptModal} onOpenChange={setShowReceiptModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

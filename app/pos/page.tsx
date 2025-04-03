@@ -34,7 +34,7 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { Drawer, DrawerContent, DrawerTrigger } from "@/components/ui/drawer"
-import { collection, query, getDocs, orderBy, addDoc, serverTimestamp, doc, getDoc } from "firebase/firestore"
+import { collection, query, getDocs, orderBy, addDoc, serverTimestamp, doc, getDoc, where } from "firebase/firestore" // Added 'where'
 import { posDb } from "@/firebase/client"
 import { useAuth } from "@/lib/auth-context"
 import { toast } from "sonner"
@@ -50,6 +50,7 @@ interface Product {
   subcategory?: string
   main_image_url?: string
   gallery_images?: string[]
+  restaurantId: string // Added restaurantId
 }
 
 interface Category {
@@ -57,6 +58,7 @@ interface Category {
   name: string
   icon: string
   itemCount: number
+  restaurantId?: string // Added restaurantId
 }
 
 interface OrderItem {
@@ -83,6 +85,7 @@ interface Order {
 export default function POS() {
   const { logout, userId } = useAuth()
   const router = useRouter()
+  const restaurantId = userId // Use userId as restaurantId
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [selectedCategory, setSelectedCategory] = useState("all")
@@ -133,9 +136,9 @@ export default function POS() {
   }
 
   const fetchRestaurantData = useCallback(async () => {
-    if (!userId) return
+    if (!restaurantId) return
     try {
-      const restaurantRef = doc(posDb, "restaurants", userId)
+      const restaurantRef = doc(posDb, "restaurants", restaurantId)
       const restaurantSnap = await getDoc(restaurantRef)
 
       if (restaurantSnap.exists()) {
@@ -153,12 +156,24 @@ export default function POS() {
       console.error("Error fetching restaurant details:", error)
       toast.error("Failed to load restaurant details")
     }
-  }, [userId])
+  }, [restaurantId])
 
   const fetchData = useCallback(async () => {
+    if (!restaurantId) {
+      toast.error("No restaurant ID found. Please log in again.")
+      setIsLoading(false)
+      return
+    }
+
     setIsLoading(true)
     try {
-      const categoriesSnapshot = await getDocs(query(collection(posDb, "categories"), orderBy("name")))
+      // Fetch categories for this restaurant
+      const categoriesQuery = query(
+        collection(posDb, "categories"),
+        where("restaurantId", "==", restaurantId), // Filter by restaurantId
+        orderBy("name")
+      )
+      const categoriesSnapshot = await getDocs(categoriesQuery)
       const categoriesData: Category[] = [
         {
           id: "all",
@@ -175,10 +190,17 @@ export default function POS() {
           name: categoryData.name,
           icon: categoryData.icon || getCategoryIconName(categoryData.name),
           itemCount: 0,
+          restaurantId: categoryData.restaurantId,
         })
       })
 
-      const allProductsSnapshot = await getDocs(query(collection(posDb, "products"), orderBy("name")))
+      // Fetch products for this restaurant
+      const productsQuery = query(
+        collection(posDb, "products"),
+        where("restaurantId", "==", restaurantId), // Filter by restaurantId
+        orderBy("name")
+      )
+      const allProductsSnapshot = await getDocs(productsQuery)
       const allProductsData = allProductsSnapshot.docs
         .filter((doc) => doc.data().status !== "inactive")
         .map((doc) => ({
@@ -192,6 +214,7 @@ export default function POS() {
           subcategory: doc.data().subcategory,
           main_image_url: doc.data().main_image_url || "",
           gallery_images: doc.data().gallery_images || [],
+          restaurantId: doc.data().restaurantId, // Include restaurantId
         }))
 
       const updatedCategories = categoriesData.map((category) => {
@@ -227,13 +250,14 @@ export default function POS() {
     } finally {
       setIsLoading(false)
     }
-  }, [selectedCategory])
+  }, [restaurantId, selectedCategory]) // Added restaurantId to dependencies
 
   useEffect(() => {
     fetchData()
     fetchRestaurantData()
   }, [fetchData, fetchRestaurantData])
 
+  // Rest of the functions remain unchanged (getCategoryIconName, handleQuantityChange, etc.)
   const getCategoryIconName = (categoryName: string): string => {
     const categoryMap: { [key: string]: string } = {
       Appetizers: "appetizer",
@@ -321,6 +345,7 @@ export default function POS() {
         createdAt: serverTimestamp(),
         customerName,
         customerPhone,
+        restaurantId, // Add restaurantId to order
       }
 
       const docRef = await addDoc(collection(posDb, "orders"), orderData)
@@ -666,6 +691,11 @@ export default function POS() {
 
   const itemCount = orderItems.reduce((total, item) => total + item.quantity, 0)
 
+  if (!restaurantId) {
+    return <div>Please log in to access the POS system.</div>
+  }
+
+  // JSX remains unchanged
   return (
     <div className="min-h-screen bg-white flex flex-col">
       {/* Mobile Header */}
@@ -1321,4 +1351,3 @@ export default function POS() {
     </div>
   )
 }
-

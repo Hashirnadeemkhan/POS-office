@@ -24,8 +24,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { collection, query, getDocs, orderBy, where, Timestamp, updateDoc, doc } from "firebase/firestore"
-import { posDb } from "@/firebase/client" // Corrected import to use posDb
+import { posDb } from "@/firebase/client"
 import { toast } from "sonner"
+import { useAuth } from "@/lib/auth-context"
 
 // Types
 interface OrderItem {
@@ -45,10 +46,13 @@ interface Order {
   paymentMethod: string
   status: string
   createdAt: Timestamp
+  restaurantId: string
 }
 
 export default function OrderList() {
   const router = useRouter()
+  const { userId } = useAuth() // Get userId from auth context
+  const restaurantId = userId // Use userId as restaurantId
   const [orders, setOrders] = useState<Order[]>([])
   const [filteredOrders, setFilteredOrders] = useState<Order[]>([])
   const [searchQuery, setSearchQuery] = useState("")
@@ -79,7 +83,6 @@ export default function OrderList() {
   // Handle sign out
   const handleSignOut = async () => {
     try {
-      // Call the logout API
       const response = await fetch("/api/pos/logout", {
         method: "POST",
         headers: {
@@ -98,6 +101,12 @@ export default function OrderList() {
   // Fetch orders
   useEffect(() => {
     const fetchOrders = async () => {
+      if (!restaurantId) {
+        toast.error("No restaurant ID found. Please log in again.")
+        setIsLoading(false)
+        return
+      }
+
       setIsLoading(true)
       try {
         // Get today's date range
@@ -110,7 +119,8 @@ export default function OrderList() {
         const endTimestamp = Timestamp.fromDate(tomorrow)
 
         const q = query(
-          collection(posDb, "orders"), // Updated to posDb
+          collection(posDb, "orders"),
+          where("restaurantId", "==", restaurantId), // Filter by restaurantId
           where("createdAt", ">=", startTimestamp),
           where("createdAt", "<=", endTimestamp),
           orderBy("createdAt", "desc"),
@@ -118,10 +128,9 @@ export default function OrderList() {
 
         const querySnapshot = await getDocs(q)
 
-        const ordersData: Order[] = []
-        querySnapshot.forEach((doc) => {
+        const ordersData: Order[] = querySnapshot.docs.map((doc) => {
           const data = doc.data()
-          ordersData.push({
+          return {
             id: doc.id,
             items: data.items || [],
             subtotal: data.subtotal || 0,
@@ -130,21 +139,22 @@ export default function OrderList() {
             paymentMethod: data.paymentMethod || "cash",
             status: data.status || "completed",
             createdAt: data.createdAt,
-          })
+            restaurantId: data.restaurantId,
+          }
         })
 
         setOrders(ordersData)
         setFilteredOrders(ordersData)
-        setIsLoading(false)
       } catch (error) {
         console.error("Error fetching orders:", error)
         toast.error("Failed to load orders")
+      } finally {
         setIsLoading(false)
       }
     }
 
     fetchOrders()
-  }, [])
+  }, [restaurantId])
 
   // Apply filters
   useEffect(() => {
@@ -296,13 +306,12 @@ export default function OrderList() {
     if (!selectedOrder || !actionType) return
 
     try {
-      const orderRef = doc(posDb, "orders", selectedOrder.id) // Updated to posDb
+      const orderRef = doc(posDb, "orders", selectedOrder.id)
 
       await updateDoc(orderRef, {
         status: actionType === "complete" ? "completed" : actionType === "cancel" ? "cancelled" : "refunded",
       })
 
-      // Update local state
       setOrders(
         orders.map((order) =>
           order.id === selectedOrder.id
@@ -327,9 +336,13 @@ export default function OrderList() {
     }
   }
 
+  if (!restaurantId) {
+    return <div>Please log in to access the Order List.</div>
+  }
+
+  // JSX remains unchanged
   return (
     <div className="min-h-screen bg-white flex flex-col">
-      {/* Header */}
       <header className="flex items-center justify-between px-4 py-2 border-b">
         <div className="flex items-center gap-2">
           <div className="bg-purple-600 text-white p-2 rounded-lg">
@@ -355,7 +368,6 @@ export default function OrderList() {
           </div>
         </div>
 
-        {/* Navigation */}
         <nav className="flex items-center gap-6">
           <Link href="/pos" className="flex flex-col items-center text-gray-500">
             <Home size={20} />
@@ -375,7 +387,6 @@ export default function OrderList() {
           </Link>
         </nav>
 
-        {/* User Info */}
         <div className="flex items-center gap-4">
           <div className="text-right">
             <p className="text-sm text-purple-600">{formattedDate}</p>
@@ -402,7 +413,6 @@ export default function OrderList() {
         </div>
       </header>
 
-      {/* Main Content */}
       <div className="flex-1 p-6">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold">Todays Orders</h1>
@@ -411,7 +421,6 @@ export default function OrderList() {
           </Button>
         </div>
 
-        {/* Filters */}
         <div className="bg-white rounded-lg shadow mb-6">
           <div className="p-4 border-b">
             <div className="flex flex-wrap gap-4">
@@ -454,7 +463,6 @@ export default function OrderList() {
           </div>
         </div>
 
-        {/* Orders Table */}
         <div className="bg-white rounded-lg shadow">
           <Table>
             <TableHeader>
@@ -616,7 +624,6 @@ export default function OrderList() {
         </div>
       </div>
 
-      {/* Receipt Modal */}
       <Dialog open={showReceiptModal} onOpenChange={setShowReceiptModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -684,7 +691,6 @@ export default function OrderList() {
         </DialogContent>
       </Dialog>
 
-      {/* Action Confirmation Modal */}
       <Dialog open={showActionModal} onOpenChange={setShowActionModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

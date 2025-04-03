@@ -24,11 +24,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns"
-import { collection, query, getDocs, where, Timestamp } from "firebase/firestore"
-import { posDb } from "@/firebase/client" // Updated import
+import { collection, query, getDocs, where, Timestamp, orderBy } from "firebase/firestore"
+import { posDb } from "@/firebase/client"
 import { toast } from "sonner"
-import { posAuth as auth } from "@/firebase/client"; // Fix: Use posAuth and alias as auth
-import { signOut } from "firebase/auth" // Add signOut import
+import { useAuth } from "@/lib/auth-context"
 
 // Types
 interface OrderItem {
@@ -48,6 +47,7 @@ interface Order {
   paymentMethod: string
   status: string
   createdAt: Timestamp
+  restaurantId: string
 }
 
 interface SalesData {
@@ -68,6 +68,8 @@ interface SalesData {
 
 export default function ReportsPage() {
   const router = useRouter()
+  const { userId, logout } = useAuth() // Get userId and logout from auth context
+  const restaurantId = userId // Use userId as restaurantId
   const [orders, setOrders] = useState<Order[]>([])
   const [salesData, setSalesData] = useState<SalesData>({
     totalSales: 0,
@@ -102,7 +104,7 @@ export default function ReportsPage() {
   // Handle sign out
   const handleSignOut = async () => {
     try {
-      await signOut(auth) // Properly sign out using Firebase Auth
+      await logout() // Use logout from auth context
       router.replace("/pos/login")
     } catch (error) {
       console.error("Error signing out:", error)
@@ -131,26 +133,33 @@ export default function ReportsPage() {
     }
   }, [dateRange])
 
-  // Fetch orders based on date range
+  // Fetch orders based on date range and restaurantId
   useEffect(() => {
     const fetchOrders = async () => {
+      if (!restaurantId) {
+        toast.error("No restaurant ID found. Please log in again.")
+        setIsLoading(false)
+        return
+      }
+
       setIsLoading(true)
       try {
         const startTimestamp = Timestamp.fromDate(startDate)
         const endTimestamp = Timestamp.fromDate(endDate)
 
         const q = query(
-          collection(posDb, "orders"), // Updated to posDb
+          collection(posDb, "orders"),
+          where("restaurantId", "==", restaurantId), // Filter by restaurantId
           where("createdAt", ">=", startTimestamp),
           where("createdAt", "<=", endTimestamp),
+          orderBy("createdAt", "desc") // Explicitly order by createdAt
         )
 
         const querySnapshot = await getDocs(q)
 
-        const ordersData: Order[] = []
-        querySnapshot.forEach((doc) => {
+        const ordersData: Order[] = querySnapshot.docs.map((doc) => {
           const data = doc.data()
-          ordersData.push({
+          return {
             id: doc.id,
             items: data.items || [],
             subtotal: data.subtotal || 0,
@@ -159,40 +168,37 @@ export default function ReportsPage() {
             paymentMethod: data.paymentMethod || "cash",
             status: data.status || "completed",
             createdAt: data.createdAt,
-          })
+            restaurantId: data.restaurantId,
+          }
         })
 
         setOrders(ordersData)
         processOrdersData(ordersData)
-        setIsLoading(false)
       } catch (error) {
         console.error("Error fetching orders:", error)
         toast.error("Failed to load reports data")
+      } finally {
         setIsLoading(false)
       }
     }
 
     fetchOrders()
-  }, [startDate, endDate])
+  }, [startDate, endDate, restaurantId])
 
   // Process orders data to generate reports
   const processOrdersData = (orders: Order[]) => {
-    // Filter out cancelled orders
     const completedOrders = orders.filter((order) => order.status === "completed")
 
-    // Calculate total sales and orders
     const totalSales = completedOrders.reduce((sum, order) => sum + order.total, 0)
     const totalOrders = completedOrders.length
     const averageOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0
 
-    // Calculate payment method breakdown
     const paymentMethodBreakdown = {
       cash: completedOrders.filter((order) => order.paymentMethod === "cash").length,
       card: completedOrders.filter((order) => order.paymentMethod === "card").length,
       wallet: completedOrders.filter((order) => order.paymentMethod === "wallet").length,
     }
 
-    // Calculate top selling items
     const itemsMap = new Map<string, { quantity: number; revenue: number }>()
 
     completedOrders.forEach((order) => {
@@ -231,31 +237,25 @@ export default function ReportsPage() {
 
   // Export report as CSV
   const exportReportCSV = () => {
-    // Create CSV content
     let csvContent = "data:text/csv;charset=utf-8,"
 
-    // Add header
     csvContent += "Report Period," + format(startDate, "PP") + " to " + format(endDate, "PP") + "\n\n"
 
-    // Add summary data
     csvContent += "Total Sales,Rs " + salesData.totalSales.toLocaleString() + "\n"
     csvContent += "Total Orders," + salesData.totalOrders + "\n"
     csvContent += "Average Order Value,Rs " + salesData.averageOrderValue.toLocaleString() + "\n\n"
 
-    // Add payment method breakdown
     csvContent += "Payment Method Breakdown\n"
     csvContent += "Cash," + salesData.paymentMethodBreakdown.cash + "\n"
     csvContent += "Card," + salesData.paymentMethodBreakdown.card + "\n"
     csvContent += "Digital Wallet," + salesData.paymentMethodBreakdown.wallet + "\n\n"
 
-    // Add top selling items
     csvContent += "Top Selling Items\n"
     csvContent += "Item,Quantity,Revenue\n"
     salesData.topSellingItems.forEach((item) => {
       csvContent += item.name + "," + item.quantity + ",Rs " + item.revenue.toLocaleString() + "\n"
     })
 
-    // Add order details
     csvContent += "\nOrder Details\n"
     csvContent += "Order ID,Date,Total,Payment Method,Status\n"
     orders.forEach((order) => {
@@ -273,7 +273,6 @@ export default function ReportsPage() {
         "\n"
     })
 
-    // Create download link
     const encodedUri = encodeURI(csvContent)
     const link = document.createElement("a")
     link.setAttribute("href", encodedUri)
@@ -286,9 +285,13 @@ export default function ReportsPage() {
     document.body.removeChild(link)
   }
 
+  if (!restaurantId) {
+    return <div>Please log in to access the Reports page.</div>
+  }
+
+  // JSX remains unchanged
   return (
     <div className="min-h-screen bg-white flex flex-col">
-      {/* Header */}
       <header className="flex items-center justify-between px-4 py-2 border-b">
         <div className="flex items-center gap-2">
           <div className="bg-purple-600 text-white p-2 rounded-lg">
@@ -314,7 +317,6 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* Navigation */}
         <nav className="flex items-center gap-6">
           <Link href="/pos" className="flex flex-col items-center text-gray-500">
             <Home size={20} />
@@ -334,7 +336,6 @@ export default function ReportsPage() {
           </Link>
         </nav>
 
-        {/* User Info */}
         <div className="flex items-center gap-4">
           <div className="text-right">
             <p className="text-sm text-purple-600">{formattedDate}</p>
@@ -361,7 +362,6 @@ export default function ReportsPage() {
         </div>
       </header>
 
-      {/* Main Content */}
       <div className="flex-1 p-6">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold">Sales Reports</h1>
@@ -370,7 +370,6 @@ export default function ReportsPage() {
           </Button>
         </div>
 
-        {/* Date Range Selector */}
         <div className="bg-white rounded-lg shadow mb-6 p-4">
           <div className="flex flex-wrap gap-4 items-center">
             <div>
@@ -447,7 +446,6 @@ export default function ReportsPage() {
           </div>
         ) : (
           <>
-            {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -483,7 +481,6 @@ export default function ReportsPage() {
               </Card>
             </div>
 
-            {/* Detailed Reports */}
             <Tabs defaultValue="top-items">
               <TabsList className="mb-4">
                 <TabsTrigger value="top-items">Top Selling Items</TabsTrigger>

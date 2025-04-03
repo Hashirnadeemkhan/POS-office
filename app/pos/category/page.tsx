@@ -8,18 +8,22 @@ import { AddCategoryModal } from "@/src/components/AddCategoryModal";
 import { EditCategoryModal } from "@/src/components/Edit-category-dailog";
 import { DeleteCategoryDialog } from "@/src/components/Delete-category-dialog";
 import { toast } from "sonner";
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, where } from "firebase/firestore";
-import { posDb, posAuth } from "@/firebase/client"; // Import posAuth for authentication
-import { useFirebaseAnalytics } from "@/lib/firebase-analytics";
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, where, onSnapshot } from "firebase/firestore";
+import { posDb } from "@/firebase/client";
+import { useAuth } from "@/lib/auth-context";
 
 interface Category {
   id: string;
   name: string;
   description: string;
+  restaurantId?: string;
 }
 
 export default function CategoryPage() {
   const router = useRouter();
+  const { user } = useAuth();
+  const restaurantId = user?.uid;
+  
   const [categories, setCategories] = useState<Category[]>([]);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -28,49 +32,53 @@ export default function CategoryPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasSubcategories, setHasSubcategories] = useState(false);
 
-  useFirebaseAnalytics();
-
   useEffect(() => {
-    const unsubscribe = posAuth.onAuthStateChanged((user) => {
-      if (user) {
-        console.log("Authenticated user UID:", user.uid); // Debug: Log user UID
-        fetchCategories();
-      } else {
-        console.error("No user signed in");
-        toast.error("Please sign in to view categories.");
-        router.push("/login"); // Redirect to login if not authenticated
-      }
-    });
-    return () => unsubscribe();
-  }, [router]);
+    if (!restaurantId) return;
 
-  const fetchCategories = async () => {
-    try {
-      setIsLoading(true);
-      const q = query(collection(posDb, "categories"), orderBy("name"));
-      const querySnapshot = await getDocs(q);
-      const categoriesList = querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        name: doc.data().name || "Unnamed Category", // Fallback if name is missing
-        description: doc.data().description || "",
-      }));
-      console.log("Fetched categories:", categoriesList); // Debug: Log fetched data
-      setCategories(categoriesList);
-      setIsLoading(false);
-    } catch (error: any) {
-      console.error("Error fetching categories:", error.message, error.code); // Detailed error logging
-      toast.error(`Failed to load categories: ${error.message}`);
-      setIsLoading(false);
-    }
-  };
+    const q = query(
+      collection(posDb, "categories"),
+      where("restaurantId", "==", restaurantId),
+      orderBy("name")
+    );
+    
+    const unsubscribe = onSnapshot(
+      q,
+      (querySnapshot) => {
+        const categoriesList = querySnapshot.docs.map((doc) => ({
+          id: doc.id,
+          name: doc.data().name || "Unknown Category",
+          description: doc.data().description || "",
+          restaurantId: doc.data().restaurantId,
+        }));
+        setCategories(categoriesList);
+        setIsLoading(false);
+      },
+      (error) => {
+        console.error("Error fetching categories:", error);
+        if (error.code === "failed-precondition" && error.message.includes("requires an index")) {
+          toast.error("Categories are loading slowly due to a missing index. Please wait or contact support.");
+        } else {
+          toast.error("Failed to load categories: " + error.message);
+        }
+        setIsLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [restaurantId]);
 
   const handleAddCategory = async (name: string, description: string) => {
+    if (!restaurantId) {
+      toast.error("No restaurant ID found. Please log in again.");
+      return;
+    }
+
     try {
       const docRef = await addDoc(collection(posDb, "categories"), {
         name,
         description: description || "",
+        restaurantId,
       });
-      setCategories([...categories, { id: docRef.id, name, description: description || "" }]);
       toast.success(`${name} has been added successfully.`);
     } catch (error: any) {
       console.error("Error adding category:", error.message, error.code);
@@ -81,8 +89,13 @@ export default function CategoryPage() {
   const handleUpdateCategory = async (id: string, name: string, description: string) => {
     try {
       const categoryRef = doc(posDb, "categories", id);
-      await updateDoc(categoryRef, { name, description: description || "" });
-      setCategories(categories.map((cat) => (cat.id === id ? { id, name, description } : cat)));
+      await updateDoc(categoryRef, { 
+        name, 
+        description: description || "",
+      });
+      setCategories(categories.map((cat) => 
+        cat.id === id ? { ...cat, name, description } : cat
+      ));
       toast.success(`${name} has been updated successfully.`);
     } catch (error: any) {
       console.error("Error updating category:", error.message, error.code);
@@ -91,12 +104,16 @@ export default function CategoryPage() {
   };
 
   const checkForSubcategories = async (categoryId: string) => {
+    if (!restaurantId) return false;
+    
     try {
-      const q = query(collection(posDb, "subcategories"), where("categoryId", "==", categoryId));
+      const q = query(
+        collection(posDb, "subcategories"),
+        where("categoryId", "==", categoryId),
+        where("restaurantId", "==", restaurantId)
+      );
       const querySnapshot = await getDocs(q);
-      const hasSubcats = !querySnapshot.empty;
-      console.log(`Subcategories for category ${categoryId}:`, hasSubcats); // Debug
-      return hasSubcats;
+      return !querySnapshot.empty;
     } catch (error: any) {
       console.error("Error checking subcategories:", error.message, error.code);
       return false;
@@ -104,24 +121,24 @@ export default function CategoryPage() {
   };
 
   const handleDeleteCategory = async () => {
-    if (selectedCategory) {
-      try {
-        const hasSubcats = await checkForSubcategories(selectedCategory.id);
-        if (hasSubcats) {
-          toast.error(`Cannot delete ${selectedCategory.name}. Please delete all subcategories first.`);
-          setIsDeleteDialogOpen(false);
-          return;
-        }
+    if (!selectedCategory || !restaurantId) return;
 
-        const categoryRef = doc(posDb, "categories", selectedCategory.id);
-        await deleteDoc(categoryRef);
-        setCategories(categories.filter((cat) => cat.id !== selectedCategory.id));
-        toast.success(`${selectedCategory.name} has been deleted.`); // Changed to success
+    try {
+      const hasSubcats = await checkForSubcategories(selectedCategory.id);
+      if (hasSubcats) {
+        toast.error(`Cannot delete ${selectedCategory.name}. Please delete all subcategories first.`);
         setIsDeleteDialogOpen(false);
-      } catch (error: any) {
-        console.error("Error deleting category:", error.message, error.code);
-        toast.error(`Failed to delete category: ${error.message}`);
+        return;
       }
+
+      const categoryRef = doc(posDb, "categories", selectedCategory.id);
+      await deleteDoc(categoryRef);
+      setCategories(categories.filter((cat) => cat.id !== selectedCategory.id));
+      toast.success(`${selectedCategory.name} has been deleted.`);
+      setIsDeleteDialogOpen(false);
+    } catch (error: any) {
+      console.error("Error deleting category:", error.message, error.code);
+      toast.error(`Failed to delete category: ${error.message}`);
     }
   };
 
@@ -142,6 +159,10 @@ export default function CategoryPage() {
       setIsDeleteDialogOpen(true);
     }
   };
+
+  if (!restaurantId) {
+    return <div>Please log in to view categories.</div>;
+  }
 
   return (
     <div>

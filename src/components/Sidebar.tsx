@@ -63,7 +63,12 @@ export default function Sidebar() {
     try {
       setIsLoggingOut(true);
       await logout(); // Call the logout function from useAuth
-      // No need to manually redirect here; useAuth handles it
+      // Redirect based on the interface
+      if (isPosInterface) {
+        router.push("/pos/login");
+      } else {
+        router.push("/admin/login");
+      }
     } catch (error) {
       console.error("Logout error:", error);
     } finally {
