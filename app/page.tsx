@@ -1,11 +1,6 @@
-import React from 'react'
+import { redirect } from 'next/navigation';
 
-const Dashboard = () => {
-  return (
-    <div>
-      
-    </div>
-  )
+export default function Home() {
+  redirect('/admin/login'); // Redirect to /admin/login
+  return null;
 }
-
-export default Dashboard
