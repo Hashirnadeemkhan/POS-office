@@ -11,6 +11,7 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const limitParam = searchParams.get("limit");
+    
 
     const restaurantsRef = posAdminDb.collection("restaurants").orderBy("createdAt", "desc");
     const query = limitParam ? restaurantsRef.limit(parseInt(limitParam) || 3) : restaurantsRef;

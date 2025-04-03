@@ -1,11 +1,12 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { collection, query, orderBy, onSnapshot, doc, getDoc } from "firebase/firestore"
-import { adminAuth, adminDb } from "@/firebase/client" // Updated import path
-import RestaurantsTable from "@/src/components/RestaurantsTable"
-import { Building2, Users, UserMinus } from "lucide-react"
-import { onAuthStateChanged } from "firebase/auth"
+import { useState, useEffect } from "react";
+import { adminAuth, adminDb } from "@/firebase/client";
+import RestaurantsTable from "@/src/components/RestaurantsTable";
+import { Building2, Users, UserMinus } from "lucide-react";
+import { onAuthStateChanged } from "firebase/auth";
+import { useAuth } from "@/lib/auth-context";
+import { getDoc, doc } from "firebase/firestore";
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -13,76 +14,66 @@ export default function Dashboard() {
     active: 0,
     deactive: 0,
     loading: true,
-  })
-  const [userName, setUserName] = useState("Admin") // Default value
+  });
+  const [userName, setUserName] = useState("Admin");
+  const { getIdToken } = useAuth();
+
+  const fetchRestaurants = async () => {
+    try {
+      const idToken = await getIdToken();
+      const response = await fetch("/api/restaurants/get", {
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+      const data = await response.json();
+      if (data.success) {
+        const restaurants = data.restaurants;
+        const totalCount = restaurants.length;
+        const activeCount = restaurants.filter((r: any) => r.isActive).length;
+        const deactiveCount = totalCount - activeCount;
+
+        setStats({
+          total: totalCount,
+          active: activeCount,
+          deactive: deactiveCount,
+          loading: false,
+        });
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (error) {
+      console.error("Error fetching restaurants:", error);
+      setStats((prev) => ({ ...prev, loading: false }));
+    }
+  };
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(adminAuth, async (user) => {
       if (user) {
         const adminRef = doc(adminDb, "adminUsers", user.uid);
-        const restaurantRef = doc(adminDb, "restaurants", user.uid);
-  
         const adminSnap = await getDoc(adminRef);
         if (adminSnap.exists()) {
-          const adminData = adminSnap.data();
-          const name = adminData.name || "Admin";
-          setUserName(name);
-          localStorage.setItem("userName", name);
-        } else {
-          const restaurantSnap = await getDoc(restaurantRef);
-          if (restaurantSnap.exists()) {
-            const restaurantData = restaurantSnap.data();
-            const name = restaurantData.name || restaurantData.ownerName || "Restaurant User";
-            setUserName(name);
-            localStorage.setItem("userName", name);
-          } else {
-            setUserName("Unknown User");
-            localStorage.setItem("userName", "Unknown User");
-          }
+          setUserName(adminSnap.data().name || "Admin");
         }
-      } else {
-        setUserName("Admin");
-        localStorage.removeItem("userName");
       }
     });
-  
-    const restaurantsRef = collection(adminDb, "restaurants");
-    const q = query(restaurantsRef, orderBy("createdAt", "desc"));
-  
-    const unsubscribeSnapshot = onSnapshot(q, (querySnapshot) => {
-      let totalCount = 0;
-      let activeCount = 0;
-      let deactiveCount = 0;
-  
-      querySnapshot.forEach((doc) => {
-        totalCount++;
-        if (doc.data().isActive) {
-          activeCount++;
-        } else {
-          deactiveCount++;
-        }
-      });
-  
-      setStats({
-        total: totalCount,
-        active: activeCount,
-        deactive: deactiveCount,
-        loading: false,
-      });
-    }, (error) => {
-      console.error("Error fetching restaurant stats in real-time:", error);
-      setStats((prev) => ({ ...prev, loading: false }));
-    });
-  
+
+    // Initial fetch
+    fetchRestaurants();
+
+    // Poll every 10 seconds for updates
+    const intervalId = setInterval(fetchRestaurants, 1000);
+
+    // Cleanup
     return () => {
       unsubscribeAuth();
-      unsubscribeSnapshot();
+      clearInterval(intervalId);
     };
-  }, []);
+  }, [getIdToken]);
 
-  // Calculate percentages for progress bars
-  const activePercentage = stats.total > 0 ? (stats.active / stats.total) * 100 : 0
-  const deactivePercentage = stats.total > 0 ? (stats.deactive / stats.total) * 100 : 0
+  const activePercentage = stats.total > 0 ? (stats.active / stats.total) * 100 : 0;
+  const deactivePercentage = stats.total > 0 ? (stats.deactive / stats.total) * 100 : 0;
 
   return (
     <div className="flex flex-col lg:flex-row min-h-screen bg-gray-100">
@@ -169,5 +160,5 @@ export default function Dashboard() {
         <RestaurantsTable />
       </div>
     </div>
-  )
+  );
 }

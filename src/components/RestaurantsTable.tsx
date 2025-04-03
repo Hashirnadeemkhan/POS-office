@@ -1,4 +1,3 @@
-// src/components/RestaurantsTable.tsx
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -12,6 +11,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { PlusCircle, Eye, Pencil, Trash2, Power, PowerOff, MoreHorizontal } from "lucide-react";
+import { useAuth } from "@/lib/auth-context"; // Import useAuth
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,12 +45,18 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [restaurantToDelete, setRestaurantToDelete] = useState<string | null>(null);
   const router = useRouter();
+  const { getIdToken } = useAuth(); // Get the ID token from auth context
 
   const fetchRestaurants = useCallback(async () => {
     setIsLoading(true);
     try {
+      const idToken = await getIdToken(); // Fetch the ID token
       const url = showViewAllButton ? "/api/restaurants/get?limit=3" : "/api/restaurants/get";
-      const response = await fetch(url);
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${idToken}`, // Include the token in the request
+        },
+      });
       const data = await response.json();
 
       if (!response.ok) {
@@ -71,7 +77,7 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
     } finally {
       setIsLoading(false);
     }
-  }, [showViewAllButton]);
+  }, [showViewAllButton, getIdToken]);
 
   useEffect(() => {
     fetchRestaurants();
@@ -79,9 +85,13 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
 
   const handleToggleStatus = async (id: string, currentStatus: boolean) => {
     try {
+      const idToken = await getIdToken();
       const response = await fetch(`/api/restaurants/update/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
         body: JSON.stringify({ isActive: !currentStatus }),
       });
 
@@ -111,8 +121,12 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
   const confirmDelete = async () => {
     if (!restaurantToDelete) return;
     try {
+      const idToken = await getIdToken();
       const response = await fetch(`/api/restaurants/delete/${restaurantToDelete}`, {
         method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
       });
 
       if (!response.ok) {
