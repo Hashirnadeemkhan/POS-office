@@ -21,8 +21,6 @@ export default function PosLoginPage() {
   React.useEffect(() => {
     if (isAuthenticated && authType === "restaurant") {
       router.push("/pos/dashboard");
-    } else if (isAuthenticated && authType === "admin") {
-      // If they're authenticated as admin but trying to access restaurant login
     }
   }, [isAuthenticated, authType, router]);
 
@@ -33,12 +31,9 @@ export default function PosLoginPage() {
 
     try {
       // Sign out from any existing auth to avoid conflicts
-      try {
-        await posAuth.signOut();
-      } catch (e) {
-        // Ignore errors here
-      }
+      await posAuth.signOut();
 
+      // Authenticate with email and password
       const userCredential = await signInWithEmailAndPassword(posAuth, email, password);
       const user = userCredential.user;
 
@@ -50,45 +45,41 @@ export default function PosLoginPage() {
 
       const restaurantData = restaurantDoc.data();
 
-      // Additional client-side check (optional, since rules will enforce it)
+      // Check if the account is active
       if (!restaurantData.isActive) {
-        throw new Error("Account is not active");
+        await posAuth.signOut(); // Sign out immediately if inactive
+        throw new Error("This account is not active");
       }
 
+      // Check activation and expiry dates
       const currentDate = new Date();
       const activationDate = new Date(restaurantData.tokenActivationDate);
       const expiryDate = new Date(restaurantData.tokenExpiresAt);
 
       if (currentDate < activationDate) {
+        await posAuth.signOut();
         throw new Error(`Account activates on ${activationDate.toLocaleDateString()}`);
       }
       if (currentDate > expiryDate) {
+        await posAuth.signOut();
         throw new Error(`Account expired on ${expiryDate.toLocaleDateString()}`);
       }
 
-      // Attempt to create a session token
+      // Create a session token for active accounts
       const sessionToken = uuidv4();
-      try {
-        await setDoc(doc(posDb, "restaurantSessions", user.uid), {
-          sessionToken,
-          email: user.email,
-          createdAt: new Date().toISOString(),
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        });
-      } catch (sessionError: any) {
-        if (sessionError.code === "permission-denied") {
-          throw new Error("Account is not active");
-        }
-        throw sessionError;
-      }
+      await setDoc(doc(posDb, "restaurantSessions", user.uid), {
+        sessionToken,
+        email: user.email,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      });
 
       localStorage.setItem("restaurantSessionToken", sessionToken);
       router.push("/pos/dashboard");
     } catch (err: any) {
       console.error("Login error:", err);
       setError(err.message || "An error occurred during login.");
-      // Sign out the user if login fails to prevent partial login state
-      await posAuth.signOut();
+      await posAuth.signOut(); // Ensure user is signed out on error
     } finally {
       setIsLoading(false);
     }

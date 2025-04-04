@@ -12,16 +12,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { collection, doc, getDoc, getDocs, updateDoc, query, where, addDoc, deleteDoc, orderBy } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, updateDoc, query, where, addDoc, deleteDoc, orderBy, onSnapshot } from "firebase/firestore";
 import { posDb } from "@/firebase/client";
 import { saveImage, generateImageId, deleteImage, getImageIdFromUrl } from "@/lib/imageStorage";
 import Image from "next/image";
 import { useAuth } from "@/lib/auth-context";
 
 interface VariantAttribute {
-  id?: string; // Optional because new attributes won't have an ID yet
-  key_name: string;
-  value_name: string;
+  id?: string;
   key: string;
   value: string;
 }
@@ -49,18 +47,21 @@ interface Product {
   subcategory: string;
   main_image_url?: string;
   gallery_images?: string[];
+  attributes: VariantAttribute[];
   restaurantId?: string;
 }
 
 interface Category {
   id: string;
   name: string;
+  restaurantId?: string;
 }
 
 interface Subcategory {
   id: string;
   name: string;
   categoryId: string;
+  restaurantId?: string;
 }
 
 export default function EditProductPage({ params }: { params: { id: string } }) {
@@ -80,9 +81,11 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
     subcategory: "",
     main_image_url: "",
     gallery_images: [],
+    attributes: [{ key: "", value: "" }],
   });
 
   const [variants, setVariants] = useState<Variant[]>([]);
+  const [basicAttributes, setBasicAttributes] = useState<VariantAttribute[]>([{ key: "", value: "" }]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [deletedVariantIds, setDeletedVariantIds] = useState<string[]>([]);
@@ -110,47 +113,70 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
     (index: number) => (el: HTMLInputElement | null) => {
       variantImageRefs.current[index] = el;
     },
-    [],
+    []
   );
 
   // Fetch categories and subcategories
   useEffect(() => {
     if (!restaurantId) return;
 
-    const fetchCategories = async () => {
-      try {
-        const q = query(collection(posDb, "categories"), where("restaurantId", "==", restaurantId), orderBy("name"));
-        const querySnapshot = await getDocs(q);
-        const categoriesList = querySnapshot.docs.map((doc) => ({
+    const qCategories = query(
+      collection(posDb, "categories"),
+      where("restaurantId", "==", restaurantId),
+      orderBy("name")
+    );
+    const unsubscribeCategories = onSnapshot(
+      qCategories,
+      (snapshot) => {
+        const cats = snapshot.docs.map((doc) => ({
           id: doc.id,
           name: doc.data().name,
+          restaurantId: doc.data().restaurantId,
         }));
-        setCategories(categoriesList);
-      } catch (error) {
+        setCategories(cats);
+      },
+      (error) => {
         console.error("Error fetching categories:", error);
-        toast.error("Failed to load categories.");
+        toast.error("Failed to load categories");
       }
-    };
+    );
 
-    const fetchSubcategories = async () => {
-      try {
-        const q = query(collection(posDb, "subcategories"), where("restaurantId", "==", restaurantId), orderBy("name"));
-        const querySnapshot = await getDocs(q);
-        const subcategoriesList = querySnapshot.docs.map((doc) => ({
-          id: doc.id,
-          name: doc.data().name,
-          categoryId: doc.data().categoryId,
-        }));
-        setSubcategories(subcategoriesList);
-      } catch (error) {
-        console.error("Error fetching subcategories:", error);
-        toast.error("Failed to load subcategories.");
-      }
-    };
-
-    fetchCategories();
-    fetchSubcategories();
+    return () => unsubscribeCategories();
   }, [restaurantId]);
+
+  useEffect(() => {
+    if (!restaurantId || !product.category) {
+      setSubcategories([]);
+      return;
+    }
+
+    const selectedCategory = categories.find((cat) => cat.name === product.category);
+    if (selectedCategory) {
+      const qSubcategories = query(
+        collection(posDb, "subcategories"),
+        where("categoryId", "==", selectedCategory.id),
+        where("restaurantId", "==", restaurantId),
+        orderBy("name")
+      );
+      const unsubscribeSubcategories = onSnapshot(
+        qSubcategories,
+        (snapshot) => {
+          const subcats = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            name: doc.data().name,
+            categoryId: doc.data().categoryId,
+            restaurantId: doc.data().restaurantId,
+          }));
+          setSubcategories(subcats);
+        },
+        (error) => {
+          console.error("Error fetching subcategories:", error);
+          toast.error("Failed to load subcategories");
+        }
+      );
+      return () => unsubscribeSubcategories();
+    }
+  }, [product.category, categories, restaurantId]);
 
   // Fetch product data
   useEffect(() => {
@@ -160,7 +186,6 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
       try {
         setIsLoading(true);
 
-        // Fetch product data
         const productDoc = await getDoc(doc(posDb, "products", productId));
         if (!productDoc.exists()) {
           toast.error("Product not found");
@@ -169,6 +194,7 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
         }
 
         const productData = productDoc.data();
+        const fetchedAttributes = productData.attributes || [{ key: "", value: "" }];
         setProduct({
           id: productId,
           name: productData.name || "",
@@ -180,42 +206,38 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
           subcategory: productData.subcategory || "",
           main_image_url: productData.main_image_url || "",
           gallery_images: productData.gallery_images || [],
+          attributes: fetchedAttributes,
           restaurantId: productData.restaurantId,
         });
+        setBasicAttributes(fetchedAttributes);
 
-        // Set main image preview if exists
         if (productData.main_image_url) {
           setMainImagePreview(productData.main_image_url);
         }
 
-        // Set gallery previews if exist
         if (productData.gallery_images && productData.gallery_images.length > 0) {
           setGalleryPreviews(productData.gallery_images);
         }
 
-        // Fetch variants
         const variantsQuery = query(
           collection(posDb, "variants"),
           where("product_id", "==", productId),
-          where("productRestaurantId", "==", restaurantId),
+          where("productRestaurantId", "==", restaurantId)
         );
         const variantsSnapshot = await getDocs(variantsQuery);
 
         const variantsPromises = variantsSnapshot.docs.map(async (variantDoc) => {
           const variantData = variantDoc.data();
 
-          // Fetch attributes for this variant
           const attributesQuery = query(
             collection(posDb, "variant_attributes"),
             where("variant_id", "==", variantDoc.id),
-            where("variantRestaurantId", "==", restaurantId),
+            where("variantRestaurantId", "==", restaurantId)
           );
           const attributesSnapshot = await getDocs(attributesQuery);
 
           const attributes = attributesSnapshot.docs.map((attrDoc) => ({
             id: attrDoc.id,
-            key_name: attrDoc.data().key_name,
-            value_name: attrDoc.data().value_name,
             key: attrDoc.data().key_name,
             value: attrDoc.data().value_name,
           }));
@@ -225,7 +247,7 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
             name: variantData.name || "",
             price: variantData.price?.toString() || "",
             stock: variantData.stock?.toString() || "",
-            attributes: attributes.length > 0 ? attributes : [{ key: "", value: "", key_name: "", value_name: "" }],
+            attributes: attributes.length > 0 ? attributes : [{ key: "", value: "" }],
             image_url: variantData.image_url || "",
             imageFile: null,
             imagePreview: variantData.image_url || "",
@@ -234,22 +256,7 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
         });
 
         const variantsData = await Promise.all(variantsPromises);
-        setVariants(
-          variantsData.length > 0
-            ? variantsData
-            : [
-                {
-                  id: `new-${Date.now()}`,
-                  name: "",
-                  price: "",
-                  stock: "",
-                  attributes: [{ key: "", value: "", key_name: "", value_name: "" }],
-                  imageFile: null,
-                  imagePreview: "",
-                  isImageChanged: false,
-                },
-              ],
-        );
+        setVariants(variantsData);
 
         setIsLoading(false);
       } catch (error) {
@@ -280,7 +287,6 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
         file,
         preview: URL.createObjectURL(file),
       }));
-
       setNewGalleryImages((prev) => [...prev, ...newFilesWithPreviews]);
     }
   };
@@ -328,11 +334,9 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
   // Remove variant image
   const removeVariantImage = (index: number) => {
     const newVariants = [...variants];
-
     if (newVariants[index].isImageChanged && newVariants[index].imagePreview) {
       URL.revokeObjectURL(newVariants[index].imagePreview);
     }
-
     newVariants[index] = {
       ...newVariants[index],
       imageFile: null,
@@ -340,7 +344,6 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
       image_url: "",
       isImageChanged: true,
     };
-
     setVariants(newVariants);
   };
 
@@ -353,7 +356,7 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
         name: "",
         price: "",
         stock: "",
-        attributes: [{ key: "", value: "", key_name: "", value_name: "" }],
+        attributes: [{ key: "", value: "" }],
         imageFile: null,
         imagePreview: "",
         isImageChanged: false,
@@ -364,11 +367,9 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
   // Remove a variant
   const removeVariant = (index: number) => {
     const variantToRemove = variants[index];
-
     if (variantToRemove.id && !variantToRemove.id.startsWith("new-")) {
       setDeletedVariantIds((prev) => [...prev, variantToRemove.id]);
-      const attributesWithIds = variantToRemove.attributes.filter((attr) => attr.id) as { id: string }[];
-      const attrIds = attributesWithIds.map((attr) => attr.id);
+      const attrIds = variantToRemove.attributes.filter((attr) => attr.id).map((attr) => attr.id!);
       setDeletedAttributeIds((prev) => [...prev, ...attrIds]);
     }
 
@@ -378,42 +379,20 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
 
     const newVariants = [...variants];
     newVariants.splice(index, 1);
-
-    if (newVariants.length === 0) {
-      setVariants([
-        {
-          id: `new-${Date.now()}`,
-          name: "",
-          price: "",
-          stock: "",
-          attributes: [{ key: "", value: "", key_name: "", value_name: "" }],
-          imageFile: null,
-          imagePreview: "",
-          isImageChanged: false,
-        },
-      ]);
-    } else {
-      setVariants(newVariants);
-    }
+    setVariants(newVariants);
   };
 
   // Update variant field
   const updateVariant = (index: number, field: keyof Variant, value: string) => {
     const newVariants = [...variants];
-    newVariants[index] = {
-      ...newVariants[index],
-      [field]: value,
-    };
+    newVariants[index] = { ...newVariants[index], [field]: value };
     setVariants(newVariants);
   };
 
   // Add attribute to variant
   const addAttribute = (variantIndex: number) => {
     const newVariants = [...variants];
-    newVariants[variantIndex] = {
-      ...newVariants[variantIndex],
-      attributes: [...newVariants[variantIndex].attributes, { key: "", value: "", key_name: "", value_name: "" }],
-    };
+    newVariants[variantIndex].attributes.push({ key: "", value: "" });
     setVariants(newVariants);
   };
 
@@ -421,15 +400,11 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
   const removeAttribute = (variantIndex: number, attrIndex: number) => {
     const newVariants = [...variants];
     const attrToRemove = newVariants[variantIndex].attributes[attrIndex];
-
-
+    if (attrToRemove.id) {
+      setDeletedAttributeIds((prev) => [...prev, attrToRemove.id!]);
+    }
     if (newVariants[variantIndex].attributes.length > 1) {
-      const newAttributes = [...newVariants[variantIndex].attributes];
-      newAttributes.splice(attrIndex, 1);
-      newVariants[variantIndex] = {
-        ...newVariants[variantIndex],
-        attributes: newAttributes,
-      };
+      newVariants[variantIndex].attributes.splice(attrIndex, 1);
       setVariants(newVariants);
     }
   };
@@ -437,18 +412,27 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
   // Update attribute
   const updateAttribute = (variantIndex: number, attrIndex: number, field: "key" | "value", value: string) => {
     const newVariants = [...variants];
-    const newAttributes = [...newVariants[variantIndex].attributes];
-    newAttributes[attrIndex] = {
-      ...newAttributes[attrIndex],
-      [field]: value,
-      key_name: field === "key" ? value : newAttributes[attrIndex].key_name,
-      value_name: field === "value" ? value : newAttributes[attrIndex].value_name,
-    };
-    newVariants[variantIndex] = {
-      ...newVariants[variantIndex],
-      attributes: newAttributes,
-    };
+    newVariants[variantIndex].attributes[attrIndex][field] = value;
     setVariants(newVariants);
+  };
+
+  // Basic attributes handling
+  const addBasicAttribute = () => {
+    setBasicAttributes([...basicAttributes, { key: "", value: "" }]);
+  };
+
+  const removeBasicAttribute = (index: number) => {
+    if (basicAttributes.length > 1) {
+      const newAttributes = [...basicAttributes];
+      newAttributes.splice(index, 1);
+      setBasicAttributes(newAttributes);
+    }
+  };
+
+  const updateBasicAttribute = (index: number, field: "key" | "value", value: string) => {
+    const newAttributes = [...basicAttributes];
+    newAttributes[index][field] = value;
+    setBasicAttributes(newAttributes);
   };
 
   // Handle form submission
@@ -457,31 +441,35 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
     setIsSubmitting(true);
 
     try {
-      // Validate base product
       if (!product.name || !product.sku || !product.base_price) {
         toast.error("Please fill in all required fields");
         setIsSubmitting(false);
         return;
       }
 
-      // Validate variants
+      for (const attr of basicAttributes) {
+        if (!attr.key || !attr.value) {
+          toast.error("Please fill in all attribute fields");
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
       for (const variant of variants) {
         if (!variant.name || !variant.price || !variant.stock) {
           toast.error("Please fill in all variant fields");
           setIsSubmitting(false);
           return;
         }
-
         for (const attr of variant.attributes) {
           if (!attr.key || !attr.value) {
-            toast.error("Please fill in all attribute fields");
+            toast.error("Please fill in all variant attribute fields");
             setIsSubmitting(false);
             return;
           }
         }
       }
 
-      // Handle main image changes
       let mainImageUrl = product.main_image_url || "";
       if (isMainImageChanged) {
         if (mainImageFile) {
@@ -498,7 +486,6 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
         }
       }
 
-      // Handle gallery image changes
       let galleryUrls = [...galleryPreviews];
       for (const imageUrl of deletedGalleryImages) {
         const imageId = getImageIdFromUrl(imageUrl);
@@ -511,36 +498,31 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
         galleryUrls.push(url);
       }
 
-      // Update product in Firestore
       await updateDoc(doc(posDb, "products", productId), {
         name: product.name,
         sku: product.sku,
-        base_price: Number(product.base_price),
+        base_price: Number.parseFloat(product.base_price),
         description: product.description,
         status: product.status,
         category: product.category,
         subcategory: product.subcategory,
         main_image_url: mainImageUrl,
         gallery_images: galleryUrls,
-        updated_at: new Date(),
+        attributes: basicAttributes,
         restaurantId,
+        updated_at: new Date(),
       });
 
-      // Delete removed variants
       for (const variantId of deletedVariantIds) {
         await deleteDoc(doc(posDb, "variants", variantId));
       }
 
-      // Delete removed attributes
       for (const attrId of deletedAttributeIds) {
         await deleteDoc(doc(posDb, "variant_attributes", attrId));
       }
 
-      // Update or add variants
       for (const variant of variants) {
-        let variantRef;
         let variantImageUrl = variant.image_url || "";
-
         if (variant.isImageChanged) {
           if (variant.image_url) {
             const imageId = getImageIdFromUrl(variant.image_url);
@@ -554,12 +536,13 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
           }
         }
 
+        let variantRef;
         if (variant.id.startsWith("new-")) {
           variantRef = await addDoc(collection(posDb, "variants"), {
             product_id: productId,
             name: variant.name,
-            price: Number(variant.price),
-            stock: Number(variant.stock),
+            price: Number.parseFloat(variant.price),
+            stock: Number.parseInt(variant.stock),
             image_url: variantImageUrl,
             productRestaurantId: restaurantId,
           });
@@ -567,13 +550,12 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
           variantRef = doc(posDb, "variants", variant.id);
           await updateDoc(variantRef, {
             name: variant.name,
-            price: Number(variant.price),
-            stock: Number(variant.stock),
+            price: Number.parseFloat(variant.price),
+            stock: Number.parseInt(variant.stock),
             image_url: variantImageUrl,
           });
         }
 
-        // Handle attributes
         for (const attr of variant.attributes) {
           if (attr.id && !deletedAttributeIds.includes(attr.id)) {
             await updateDoc(doc(posDb, "variant_attributes", attr.id), {
@@ -592,10 +574,7 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
         }
       }
 
-      // Clean up object URLs
-      if (mainImageFile && mainImagePreview.startsWith("blob:")) {
-        URL.revokeObjectURL(mainImagePreview);
-      }
+      if (mainImageFile && mainImagePreview.startsWith("blob:")) URL.revokeObjectURL(mainImagePreview);
       newGalleryImages.forEach(({ preview }) => URL.revokeObjectURL(preview));
       variants.forEach((variant) => {
         if (variant.isImageChanged && variant.imagePreview.startsWith("blob:")) {
@@ -605,9 +584,9 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
 
       toast.success("Product updated successfully");
       router.push("/pos/products");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating product:", error);
-      toast.error("Failed to update product");
+      toast.error(`Failed to update product: ${error.message}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -627,11 +606,6 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
   if (!restaurantId) {
     return <div>Please log in to edit products.</div>;
   }
-
-  const filteredSubcategories = subcategories.filter(
-    (subcat) =>
-      product.category === "" || subcat.categoryId === categories.find((c) => c.name === product.category)?.id,
-  );
 
   return (
     <div className="container mx-auto py-8">
@@ -720,11 +694,11 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
                     <SelectValue placeholder="Select a category" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="electronics">Electronics</SelectItem>
-                    <SelectItem value="clothing">Clothing</SelectItem>
-                    <SelectItem value="food">Food & Beverages</SelectItem>
-                    <SelectItem value="furniture">Furniture</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
+                    {categories.map((cat) => (
+                      <SelectItem key={cat.id} value={cat.name}>
+                        {cat.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -733,43 +707,63 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
                 <Select
                   value={product.subcategory}
                   onValueChange={(value) => setProduct({ ...product, subcategory: value })}
+                  disabled={!product.category}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select a subcategory" />
                   </SelectTrigger>
                   <SelectContent>
-                    {product.category === "electronics" && (
-                      <>
-                        <SelectItem value="phones">Phones</SelectItem>
-                        <SelectItem value="computers">Computers</SelectItem>
-                        <SelectItem value="accessories">Accessories</SelectItem>
-                      </>
+                    {subcategories.length > 0 ? (
+                      subcategories.map((subcat) => (
+                        <SelectItem key={subcat.id} value={subcat.name}>
+                          {subcat.name}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="no-subcategories" disabled>
+                        No subcategories available
+                      </SelectItem>
                     )}
-                    {product.category === "clothing" && (
-                      <>
-                        <SelectItem value="shirts">Shirts</SelectItem>
-                        <SelectItem value="pants">Pants</SelectItem>
-                        <SelectItem value="shoes">Shoes</SelectItem>
-                      </>
-                    )}
-                    {product.category === "food" && (
-                      <>
-                        <SelectItem value="beverages">Beverages</SelectItem>
-                        <SelectItem value="snacks">Snacks</SelectItem>
-                        <SelectItem value="meals">Meals</SelectItem>
-                      </>
-                    )}
-                    {product.category === "furniture" && (
-                      <>
-                        <SelectItem value="chairs">Chairs</SelectItem>
-                        <SelectItem value="tables">Tables</SelectItem>
-                        <SelectItem value="beds">Beds</SelectItem>
-                      </>
-                    )}
-                    <SelectItem value="other">Other</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="space-y-2 mt-4">
+              <div className="flex justify-between items-center">
+                <Label>Attributes</Label>
+                <Button type="button" onClick={addBasicAttribute} variant="outline" size="sm">
+                  <PlusCircle className="h-4 w-4 mr-2" />
+                  Add Attribute
+                </Button>
+              </div>
+              {basicAttributes.map((attr, attrIndex) => (
+                <div key={attrIndex} className="flex items-center gap-2">
+                  <Input
+                    value={attr.key}
+                    onChange={(e) => updateBasicAttribute(attrIndex, "key", e.target.value)}
+                    placeholder="Attribute (e.g. Size)"
+                    className="flex-1"
+                  />
+                  <Input
+                    value={attr.value}
+                    onChange={(e) => updateBasicAttribute(attrIndex, "value", e.target.value)}
+                    placeholder="Value (e.g. Large)"
+                    className="flex-1"
+                  />
+                  {basicAttributes.length > 1 && (
+                    <Button
+                      type="button"
+                      onClick={() => removeBasicAttribute(attrIndex)}
+                      variant="ghost"
+                      size="icon"
+                      className="text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
@@ -799,9 +793,7 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
                         size="icon"
                         className="absolute top-1 right-1 h-6 w-6 bg-white rounded-full"
                         onClick={() => {
-                          if (mainImagePreview.startsWith("blob:")) {
-                            URL.revokeObjectURL(mainImagePreview);
-                          }
+                          if (mainImagePreview.startsWith("blob:")) URL.revokeObjectURL(mainImagePreview);
                           setMainImageFile(null);
                           setMainImagePreview("");
                           setIsMainImageChanged(true);
@@ -823,11 +815,6 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
                       />
                     </>
                   )}
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500">
-                    This will be the primary image shown in product listings and at the top of the product detail page.
-                  </p>
                 </div>
               </div>
             </div>
@@ -889,161 +876,159 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
                   />
                 </div>
               </div>
-              <p className="text-xs text-gray-500">
-                Add up to 5 additional images to show your product from different angles.
-              </p>
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Product Variants</CardTitle>
+            <CardTitle>Product Variants (Optional)</CardTitle>
             <Button type="button" onClick={addVariant} variant="outline" size="sm">
               <PlusCircle className="h-4 w-4 mr-2" />
               Add Variant
             </Button>
           </CardHeader>
           <CardContent className="space-y-6">
-            {variants.map((variant, variantIndex) => (
-              <div key={variantIndex} className="border rounded-lg p-4 space-y-4">
-                <div className="flex justify-between items-center">
-                  <h3 className="font-medium">Variant {variantIndex + 1}</h3>
-                  <Button
-                    type="button"
-                    onClick={() => removeVariant(variantIndex)}
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive hover:text-destructive/90"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor={`variant-name-${variantIndex}`}>
-                      Variant Name <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      id={`variant-name-${variantIndex}`}
-                      value={variant.name}
-                      onChange={(e) => updateVariant(variantIndex, "name", e.target.value)}
-                      placeholder="e.g. Small, Red, 2.5L"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor={`variant-price-${variantIndex}`}>
-                      Price <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      id={`variant-price-${variantIndex}`}
-                      type="number"
-                      step="0.01"
-                      value={variant.price}
-                      onChange={(e) => updateVariant(variantIndex, "price", e.target.value)}
-                      placeholder="0.00"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor={`variant-stock-${variantIndex}`}>
-                      Stock <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      id={`variant-stock-${variantIndex}`}
-                      type="number"
-                      value={variant.stock}
-                      onChange={(e) => updateVariant(variantIndex, "stock", e.target.value)}
-                      placeholder="0"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Variant Image</Label>
-                  <div className="flex items-start gap-4">
-                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-2 w-24 h-24 flex flex-col items-center justify-center relative">
-                      {variant.imagePreview ? (
-                        <>
-                          <div className="relative w-full h-full">
-                            <Image
-                              src={variant.imagePreview || "/placeholder.svg"}
-                              alt={`Variant ${variantIndex + 1} image`}
-                              fill
-                              className="object-cover rounded-md"
-                            />
-                          </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="absolute top-1 right-1 h-5 w-5 bg-white rounded-full"
-                            onClick={() => removeVariantImage(variantIndex)}
-                          >
-                            <X className="h-3 w-3" />
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <ImageIcon className="h-8 w-8 text-gray-400 mb-1" />
-                          <span className="text-xs text-gray-500 text-center">Upload</span>
-                          <input
-                            ref={setVariantImageRef(variantIndex)}
-                            type="file"
-                            accept="image/*"
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                            onChange={(e) => handleVariantImageChange(variantIndex, e)}
-                          />
-                        </>
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-xs text-gray-500">Add a specific image for this variant (optional).</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
+            {variants.length === 0 ? (
+              <div className="text-center py-4 text-muted-foreground"></div>
+            ) : (
+              variants.map((variant, variantIndex) => (
+                <div key={variantIndex} className="border rounded-lg p-4 space-y-4">
                   <div className="flex justify-between items-center">
-                    <Label>Attributes</Label>
-                    <Button type="button" onClick={() => addAttribute(variantIndex)} variant="outline" size="sm">
-                      <PlusCircle className="h-4 w-4 mr-2" />
-                      Add Attribute
+                    <h3 className="font-medium">Variant {variantIndex + 1}</h3>
+                    <Button
+                      type="button"
+                      onClick={() => removeVariant(variantIndex)}
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
-                  {variant.attributes.map((attr, attrIndex) => (
-                    <div key={attrIndex} className="flex items-center gap-2">
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor={`variant-name-${variantIndex}`}>
+                        Variant Name <span className="text-red-500">*</span>
+                      </Label>
                       <Input
-                        value={attr.key}
-                        onChange={(e) => updateAttribute(variantIndex, attrIndex, "key", e.target.value)}
-                        placeholder="Attribute (e.g. Size, Color)"
-                        className="flex-1"
+                        id={`variant-name-${variantIndex}`}
+                        value={variant.name}
+                        onChange={(e) => updateVariant(variantIndex, "name", e.target.value)}
+                        placeholder="e.g. Small, Red"
+                        required
                       />
-                      <Input
-                        value={attr.value}
-                        onChange={(e) => updateAttribute(variantIndex, attrIndex, "value", e.target.value)}
-                        placeholder="Value (e.g. Large, Red)"
-                        className="flex-1"
-                      />
-                      {variant.attributes.length > 1 && (
-                        <Button
-                          type="button"
-                          onClick={() => removeAttribute(variantIndex, attrIndex)}
-                          variant="ghost"
-                          size="icon"
-                          className="text-destructive hover:text-destructive/90"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
                     </div>
-                  ))}
+                    <div className="space-y-2">
+                      <Label htmlFor={`variant-price-${variantIndex}`}>
+                        Price <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id={`variant-price-${variantIndex}`}
+                        type="number"
+                        step="0.01"
+                        value={variant.price}
+                        onChange={(e) => updateVariant(variantIndex, "price", e.target.value)}
+                        placeholder="0.00"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`variant-stock-${variantIndex}`}>
+                        Stock <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id={`variant-stock-${variantIndex}`}
+                        type="number"
+                        value={variant.stock}
+                        onChange={(e) => updateVariant(variantIndex, "stock", e.target.value)}
+                        placeholder="0"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Variant Image</Label>
+                    <div className="flex items-start gap-4">
+                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-2 w-24 h-24 flex flex-col items-center justify-center relative">
+                        {variant.imagePreview ? (
+                          <>
+                            <div className="relative w-full h-full">
+                              <Image
+                                src={variant.imagePreview || "/placeholder.svg"}
+                                alt={`Variant ${variantIndex + 1} image`}
+                                fill
+                                className="object-cover rounded-md"
+                              />
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="absolute top-1 right-1 h-5 w-5 bg-white rounded-full"
+                              onClick={() => removeVariantImage(variantIndex)}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <ImageIcon className="h-8 w-8 text-gray-400 mb-1" />
+                            <span className="text-xs text-gray-500">Upload</span>
+                            <input
+                              ref={setVariantImageRef(variantIndex)}
+                              type="file"
+                              accept="image/*"
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                              onChange={(e) => handleVariantImageChange(variantIndex, e)}
+                            />
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <Label>Variant-Specific Attributes</Label>
+                      <Button type="button" onClick={() => addAttribute(variantIndex)} variant="outline" size="sm">
+                        <PlusCircle className="h-4 w-4 mr-2" />
+                        Add Attribute
+                      </Button>
+                    </div>
+                    {variant.attributes.map((attr, attrIndex) => (
+                      <div key={attrIndex} className="flex items-center gap-2">
+                        <Input
+                          value={attr.key}
+                          onChange={(e) => updateAttribute(variantIndex, attrIndex, "key", e.target.value)}
+                          placeholder="Attribute (e.g. Size)"
+                          className="flex-1"
+                        />
+                        <Input
+                          value={attr.value}
+                          onChange={(e) => updateAttribute(variantIndex, attrIndex, "value", e.target.value)}
+                          placeholder="Value (e.g. Large)"
+                          className="flex-1"
+                        />
+                        {variant.attributes.length > 1 && (
+                          <Button
+                            type="button"
+                            onClick={() => removeAttribute(variantIndex, attrIndex)}
+                            variant="ghost"
+                            size="icon"
+                            className="text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </CardContent>
         </Card>
 
