@@ -12,7 +12,6 @@ import { useAuth } from "@/lib/auth-context"
 interface UserProfile {
   displayName: string
   email: string
-  phoneNumber: string
   role: "admin" | "superadmin"
   joinDate?: string
 }
@@ -46,7 +45,6 @@ export default function ViewProfile() {
         setProfile({
           displayName: user.displayName || userData.name || "User",
           email: user.email || "Email not available",
-          phoneNumber: userData.phoneNumber || "",
           role: userRole || userData.role || "admin",
           joinDate: userData.createdAt?.toDate().toLocaleDateString() || "Not available",
         })
@@ -99,14 +97,6 @@ export default function ViewProfile() {
             <div className="flex items-center">
               <Mail className="w-4 h-4 mr-2 text-muted-foreground" />
               <span>{profile.email}</span>
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <div className="text-sm font-medium text-muted-foreground">Phone Number</div>
-            <div className="flex items-center">
-              <Phone className="w-4 h-4 mr-2 text-muted-foreground" />
-              <span>{profile.phoneNumber || "Not provided"}</span>
             </div>
           </div>
 

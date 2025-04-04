@@ -18,7 +18,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     );
   }
 
-  // Determine if sidebar should be shown
+
   // Don't show sidebar on login pages
   const shouldShowSidebar = isAuthenticated && 
     (authType === "admin" || authType === "restaurant");

@@ -16,6 +16,7 @@ import {
   Check,
   X,
   AlertTriangle,
+  Calendar,
 } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -23,7 +24,21 @@ import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { collection, query, getDocs, orderBy, where, Timestamp, updateDoc, doc } from "firebase/firestore"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar as CalendarComponent } from "@/components/ui/calendar"
+import { format } from "date-fns"
+import {
+  collection,
+  query,
+  getDocs,
+  orderBy,
+  where,
+  Timestamp,
+  updateDoc,
+  doc,
+  getDoc,
+  onSnapshot,
+} from "firebase/firestore"
 import { posDb } from "@/firebase/client"
 import { toast } from "sonner"
 import { useAuth } from "@/lib/auth-context"
@@ -49,10 +64,63 @@ interface Order {
   restaurantId: string
 }
 
+interface VariantAttribute {
+  id: string
+  key_name: string
+  value_name: string
+}
+
+interface Variant {
+  id: string
+  name: string
+  price: number
+  stock: number
+  attributes: VariantAttribute[]
+  image_url?: string
+  productRestaurantId?: string
+}
+
+interface Product {
+  id: string
+  name: string
+  sku: string
+  base_price?: number
+  description?: string
+  status?: "active" | "inactive"
+  category?: string
+  subcategory?: string
+  variants: Variant[]
+  main_image_url?: string
+  gallery_images?: string[]
+  restaurantId?: string
+}
+
+interface Category {
+  id: string
+  name: string
+  restaurantId?: string
+}
+
+interface Subcategory {
+  id: string
+  name: string
+  categoryId: string
+  restaurantId?: string
+}
+
+// New interface for stock tracking
+interface ProductStock {
+  productId: string
+  variantId: string
+  name: string
+  orderedQuantity: number
+  availableStock: number
+}
+
 export default function OrderList() {
   const router = useRouter()
-  const { userId } = useAuth() // Get userId from auth context
-  const restaurantId = userId // Use userId as restaurantId
+  const { userId } = useAuth()
+  const restaurantId = userId
   const [orders, setOrders] = useState<Order[]>([])
   const [filteredOrders, setFilteredOrders] = useState<Order[]>([])
   const [searchQuery, setSearchQuery] = useState("")
@@ -65,8 +133,19 @@ export default function OrderList() {
   const [showReceiptModal, setShowReceiptModal] = useState(false)
   const [showActionModal, setShowActionModal] = useState(false)
   const [actionType, setActionType] = useState<"complete" | "cancel" | "refund" | null>(null)
+  const [restaurantDetails, setRestaurantDetails] = useState({
+    name: "RESTAURANT NAME",
+    address: "123 Main Street, City",
+    phone: "Tel: (123) 456-7890",
+  })
+  const [products, setProducts] = useState<Product[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
+  const [subcategories, setSubcategories] = useState<Subcategory[]>([])
+  const [showInventory, setShowInventory] = useState(false)
+  const [categoryFilter, setCategoryFilter] = useState("all")
+  const [searchProductTerm, setSearchProductTerm] = useState("")
+  const [productStockMap, setProductStockMap] = useState<Record<string, ProductStock>>({})
 
-  // Get current date and time
   const currentDate = new Date()
   const formattedDate = currentDate.toLocaleDateString("en-US", {
     weekday: "short",
@@ -80,7 +159,6 @@ export default function OrderList() {
     hour12: true,
   })
 
-  // Handle sign out
   const handleSignOut = async () => {
     try {
       const response = await fetch("/api/pos/logout", {
@@ -98,7 +176,28 @@ export default function OrderList() {
     }
   }
 
-  // Fetch orders
+  useEffect(() => {
+    const fetchRestaurantData = async () => {
+      if (!restaurantId) return
+      try {
+        const restaurantRef = doc(posDb, "restaurants", restaurantId)
+        const restaurantSnap = await getDoc(restaurantRef)
+        if (restaurantSnap.exists()) {
+          const data = restaurantSnap.data()
+          setRestaurantDetails({
+            name: data.name || "RESTAURANT NAME",
+            address: data.address || "123 Main Street, City",
+            phone: data.phoneNumber || "Tel: (123) 456-7890",
+          })
+        }
+      } catch (error) {
+        console.error("Error fetching restaurant details:", error)
+        toast.error("Failed to load restaurant details")
+      }
+    }
+    fetchRestaurantData()
+  }, [restaurantId])
+
   useEffect(() => {
     const fetchOrders = async () => {
       if (!restaurantId) {
@@ -109,25 +208,42 @@ export default function OrderList() {
 
       setIsLoading(true)
       try {
-        // Get today's date range
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
-        const tomorrow = new Date(today)
-        tomorrow.setDate(tomorrow.getDate() + 1)
+        let q
+        if (dateFilter) {
+          const selectedDate = new Date(dateFilter)
+          selectedDate.setHours(0, 0, 0, 0)
+          const nextDay = new Date(selectedDate)
+          nextDay.setDate(nextDay.getDate() + 1)
 
-        const startTimestamp = Timestamp.fromDate(today)
-        const endTimestamp = Timestamp.fromDate(tomorrow)
+          const startTimestamp = Timestamp.fromDate(selectedDate)
+          const endTimestamp = Timestamp.fromDate(nextDay)
 
-        const q = query(
-          collection(posDb, "orders"),
-          where("restaurantId", "==", restaurantId), // Filter by restaurantId
-          where("createdAt", ">=", startTimestamp),
-          where("createdAt", "<=", endTimestamp),
-          orderBy("createdAt", "desc"),
-        )
+          q = query(
+            collection(posDb, "orders"),
+            where("restaurantId", "==", restaurantId),
+            where("createdAt", ">=", startTimestamp),
+            where("createdAt", "<", endTimestamp),
+            orderBy("createdAt", "desc"),
+          )
+        } else {
+          const today = new Date()
+          today.setHours(0, 0, 0, 0)
+          const tomorrow = new Date(today)
+          tomorrow.setDate(tomorrow.getDate() + 1)
+
+          const startTimestamp = Timestamp.fromDate(today)
+          const endTimestamp = Timestamp.fromDate(tomorrow)
+
+          q = query(
+            collection(posDb, "orders"),
+            where("restaurantId", "==", restaurantId),
+            where("createdAt", ">=", startTimestamp),
+            where("createdAt", "<", endTimestamp),
+            orderBy("createdAt", "desc"),
+          )
+        }
 
         const querySnapshot = await getDocs(q)
-
         const ordersData: Order[] = querySnapshot.docs.map((doc) => {
           const data = doc.data()
           return {
@@ -154,13 +270,164 @@ export default function OrderList() {
     }
 
     fetchOrders()
+  }, [restaurantId, dateFilter])
+
+  useEffect(() => {
+    if (!restaurantId) return
+
+    const fetchProducts = async () => {
+      try {
+        let q = query(collection(posDb, "products"), where("restaurantId", "==", restaurantId), orderBy("name"))
+
+        if (categoryFilter !== "all") {
+          q = query(q, where("category", "==", categoryFilter))
+        }
+
+        const unsubscribe = onSnapshot(
+          q,
+          async (querySnapshot) => {
+            const productsData: Product[] = []
+
+            for (const docSnapshot of querySnapshot.docs) {
+              const productData = docSnapshot.data()
+
+              const variantsQuery = query(
+                collection(posDb, "variants"),
+                where("product_id", "==", docSnapshot.id),
+                where("productRestaurantId", "==", restaurantId),
+              )
+              const variantsSnapshot = await getDocs(variantsQuery)
+              const variants: Variant[] = []
+
+              for (const variantDoc of variantsSnapshot.docs) {
+                const variantData = variantDoc.data()
+
+                const attributesQuery = query(
+                  collection(posDb, "variant_attributes"),
+                  where("variant_id", "==", variantDoc.id),
+                  where("variantRestaurantId", "==", restaurantId),
+                )
+                const attributesSnapshot = await getDocs(attributesQuery)
+                const attributes = attributesSnapshot.docs.map((attrDoc) => ({
+                  id: attrDoc.id,
+                  ...attrDoc.data(),
+                })) as VariantAttribute[]
+
+                variants.push({
+                  id: variantDoc.id,
+                  name: variantData.name || "",
+                  price: variantData.price || 0,
+                  stock: variantData.stock || 0,
+                  attributes,
+                  image_url: variantData.image_url || "",
+                  productRestaurantId: variantData.productRestaurantId,
+                })
+              }
+
+              productsData.push({
+                id: docSnapshot.id,
+                name: productData.name || "",
+                sku: productData.sku || "",
+                base_price: productData.base_price,
+                description: productData.description,
+                status: productData.status,
+                category: productData.category,
+                subcategory: productData.subcategory,
+                variants,
+                main_image_url: productData.main_image_url || "",
+                gallery_images: productData.gallery_images || [],
+                restaurantId: productData.restaurantId,
+              })
+            }
+
+            setProducts(productsData)
+          },
+          (error) => {
+            console.error("Error fetching products:", error)
+            toast.error("Failed to load products")
+          },
+        )
+
+        return () => unsubscribe()
+      } catch (error) {
+        console.error("Error setting up products listener:", error)
+        toast.error("Failed to set up products listener.")
+      }
+    }
+
+    fetchProducts()
+  }, [restaurantId, categoryFilter])
+
+  useEffect(() => {
+    if (!restaurantId) return
+
+    const q = query(collection(posDb, "categories"), where("restaurantId", "==", restaurantId), orderBy("name"))
+    const unsubscribe = onSnapshot(
+      q,
+      (querySnapshot) => {
+        const categoriesList = querySnapshot.docs.map((doc) => ({
+          id: doc.id,
+          name: doc.data().name,
+          restaurantId: doc.data().restaurantId,
+        }))
+        setCategories(categoriesList)
+      },
+      (error) => {
+        console.error("Error fetching categories:", error)
+        toast.error("Failed to load categories.")
+      },
+    )
+    return () => unsubscribe()
   }, [restaurantId])
 
-  // Apply filters
+  // Calculate stock based on orders and products
+  useEffect(() => {
+    const calculateStock = () => {
+      const stockMap: Record<string, ProductStock> = {};
+
+      // Initialize stock from products
+      products.forEach((product) => {
+        product.variants.forEach((variant) => {
+          const key = `${product.id}-${variant.id}`;
+          stockMap[key] = {
+            productId: product.id,
+            variantId: variant.id,
+            name: `${product.name} - ${variant.name}`,
+            orderedQuantity: 0,
+            availableStock: variant.stock,
+          };
+        });
+      });
+
+      // Update ordered quantities from orders
+      orders.forEach((order) => {
+        order.items.forEach((item) => {
+          // Assuming productId in OrderItem corresponds to variant.id or product.id
+          // Adjust this logic if your OrderItem has a separate variantId field
+          const matchingVariant = products
+            .flatMap((p) => p.variants)
+            .find((v) => v.id === item.productId || v.productRestaurantId === item.productId);
+          if (matchingVariant) {
+            const key = `${matchingVariant.productRestaurantId || matchingVariant.id}-${matchingVariant.id}`;
+            if (stockMap[key]) {
+              stockMap[key].orderedQuantity += item.quantity;
+              stockMap[key].availableStock = Math.max(0, stockMap[key].availableStock - item.quantity);
+            }
+          }
+        });
+      });
+
+      setProductStockMap(stockMap);
+    };
+
+    if (products.length > 0 && orders.length > 0) {
+      calculateStock();
+    }
+  }, [products, orders]);
+
   useEffect(() => {
     let result = orders
 
-    // Search filter
     if (searchQuery) {
       result = result.filter(
         (order) =>
@@ -169,7 +436,6 @@ export default function OrderList() {
       )
     }
 
-    // Date filter
     if (dateFilter) {
       const filterDate = new Date(dateFilter)
       filterDate.setHours(0, 0, 0, 0)
@@ -181,12 +447,10 @@ export default function OrderList() {
       })
     }
 
-    // Status filter
     if (statusFilter !== "all") {
       result = result.filter((order) => order.status === statusFilter)
     }
 
-    // Payment method filter
     if (paymentMethodFilter !== "all") {
       result = result.filter((order) => order.paymentMethod === paymentMethodFilter)
     }
@@ -194,7 +458,12 @@ export default function OrderList() {
     setFilteredOrders(result)
   }, [orders, searchQuery, dateFilter, statusFilter, paymentMethodFilter])
 
-  // Toggle order expansion
+  const filteredProducts = products.filter(
+    (product) =>
+      product.name.toLowerCase().includes(searchProductTerm.toLowerCase()) ||
+      product.sku.toLowerCase().includes(searchProductTerm.toLowerCase()),
+  )
+
   const toggleOrderExpand = (orderId: string) => {
     setExpandedOrders((prev) => ({
       ...prev,
@@ -202,13 +471,11 @@ export default function OrderList() {
     }))
   }
 
-  // View receipt
   const viewReceipt = (order: Order) => {
     setSelectedOrder(order)
     setShowReceiptModal(true)
   }
 
-  // Handle print receipt
   const handlePrintReceipt = () => {
     if (!selectedOrder) return
 
@@ -231,9 +498,9 @@ export default function OrderList() {
           </head>
           <body>
             <div class="header">
-              <h2>RESTAURANT NAME</h2>
-              <p>123 Main Street, City</p>
-              <p>Tel: (123) 456-7890</p>
+              <h2>${restaurantDetails.name}</h2>
+              <p>${restaurantDetails.address}</p>
+              <p>${restaurantDetails.phone}</p>
               <p>${selectedOrder.createdAt.toDate().toLocaleString()}</p>
               <p>Order #: ${selectedOrder.id.slice(-6)}</p>
             </div>
@@ -286,7 +553,6 @@ export default function OrderList() {
     }
   }
 
-  // Reset filters
   const resetFilters = () => {
     setSearchQuery("")
     setDateFilter(undefined)
@@ -294,14 +560,12 @@ export default function OrderList() {
     setPaymentMethodFilter("all")
   }
 
-  // Handle order action (complete, cancel, refund)
   const handleOrderAction = (order: Order, action: "complete" | "cancel" | "refund") => {
     setSelectedOrder(order)
     setActionType(action)
     setShowActionModal(true)
   }
 
-  // Confirm order action
   const confirmOrderAction = async () => {
     if (!selectedOrder || !actionType) return
 
@@ -340,7 +604,6 @@ export default function OrderList() {
     return <div>Please log in to access the Order List.</div>
   }
 
-  // JSX remains unchanged
   return (
     <div className="min-h-screen bg-white flex flex-col">
       <header className="flex items-center justify-between px-4 py-2 border-b">
@@ -415,7 +678,9 @@ export default function OrderList() {
 
       <div className="flex-1 p-6">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Todays Orders</h1>
+          <h1 className="text-2xl font-bold">
+            {dateFilter ? format(dateFilter, "MMMM d, yyyy") + " Orders" : "Today's Orders"}
+          </h1>
           <Button onClick={resetFilters} variant="outline">
             Reset Filters
           </Button>
@@ -434,6 +699,18 @@ export default function OrderList() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
+
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="min-w-[200px] justify-start">
+                    <Calendar className="mr-2 h-4 w-4" />
+                    {dateFilter ? format(dateFilter, "PPP") : "Filter by date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <CalendarComponent mode="single" selected={dateFilter} onSelect={setDateFilter} initialFocus />
+                </PopoverContent>
+              </Popover>
 
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="min-w-[200px]">
@@ -469,7 +746,7 @@ export default function OrderList() {
               <TableRow>
                 <TableHead className="w-10"></TableHead>
                 <TableHead>Order ID</TableHead>
-                <TableHead>Time</TableHead>
+                <TableHead>{dateFilter ? "Date & Time" : "Time"}</TableHead>
                 <TableHead>Items</TableHead>
                 <TableHead>Total</TableHead>
                 <TableHead>Payment Method</TableHead>
@@ -511,7 +788,11 @@ export default function OrderList() {
                         </Button>
                       </TableCell>
                       <TableCell className="font-medium">#{order.id.slice(-6)}</TableCell>
-                      <TableCell>{order.createdAt.toDate().toLocaleTimeString()}</TableCell>
+                      <TableCell>
+                        {dateFilter
+                          ? order.createdAt.toDate().toLocaleString()
+                          : order.createdAt.toDate().toLocaleTimeString()}
+                      </TableCell>
                       <TableCell>{order.items.length} items</TableCell>
                       <TableCell>Rs {order.total.toLocaleString()}</TableCell>
                       <TableCell className="capitalize">{order.paymentMethod}</TableCell>
@@ -583,20 +864,31 @@ export default function OrderList() {
                           <div className="p-4">
                             <h4 className="font-medium mb-2">Order Items</h4>
                             <div className="space-y-2">
-                              {order.items.map((item, index) => (
-                                <div
-                                  key={`item-${order.id}-${index}`}
-                                  className="flex justify-between items-center border-b pb-2"
-                                >
-                                  <div>
-                                    <p>{item.name}</p>
-                                    <p className="text-sm text-gray-500">
-                                      Rs {item.price.toLocaleString()} x {item.quantity}
-                                    </p>
+                              {order.items.map((item, index) => {
+                                const stockKey = `${item.productId}-${item.productId}`; // Adjust if variant IDs are separate
+                                const stockInfo = productStockMap[stockKey] || {
+                                  orderedQuantity: 0,
+                                  availableStock: 0,
+                                };
+
+                                return (
+                                  <div
+                                    key={`item-${order.id}-${index}`}
+                                    className="flex justify-between items-center border-b pb-2"
+                                  >
+                                    <div>
+                                      <p>{item.name}</p>
+                                      <p className="text-sm text-gray-500">
+                                        Rs {item.price.toLocaleString()} x {item.quantity}
+                                      </p>
+                                      <p className="text-xs text-gray-600">
+                                        Ordered: {stockInfo.orderedQuantity} | Available: {stockInfo.availableStock}
+                                      </p>
+                                    </div>
+                                    <p className="font-medium">Rs {(item.price * item.quantity).toLocaleString()}</p>
                                   </div>
-                                  <p className="font-medium">Rs {(item.price * item.quantity).toLocaleString()}</p>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                             <div className="mt-4 flex justify-between">
                               <div>
@@ -622,6 +914,105 @@ export default function OrderList() {
             </TableBody>
           </Table>
         </div>
+
+        <div className={`mt-8 bg-white rounded-lg shadow ${showInventory ? "block" : "hidden"}`}>
+          <div className="p-4 border-b flex justify-between items-center">
+            <h2 className="text-xl font-bold">Inventory Status</h2>
+            <Button variant="outline" onClick={() => setShowInventory(false)}>
+              Hide Inventory
+            </Button>
+          </div>
+
+          <div className="p-4 border-b">
+            <div className="flex flex-wrap gap-4">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                <Input
+                  type="text"
+                  placeholder="Search products..."
+                  className="pl-8"
+                  value={searchProductTerm}
+                  onChange={(e) => setSearchProductTerm(e.target.value)}
+                />
+              </div>
+
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="min-w-[200px]">
+                  <SelectValue placeholder="Filter by category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {categories.map((category) => (
+                    <SelectItem key={category.id} value={category.name}>
+                      {category.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Product</TableHead>
+                  <TableHead>SKU</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Variant</TableHead>
+                  <TableHead className="text-center">Available Stock</TableHead>
+                  <TableHead className="text-center">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredProducts.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-10 text-gray-500">
+                      No products found matching your filters
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredProducts.flatMap((product) =>
+                    product.variants.map((variant, index) => (
+                      <TableRow key={`${product.id}-${variant.id}`}>
+                        {index === 0 ? (
+                          <>
+                            <TableCell className="font-medium" rowSpan={product.variants.length}>
+                              {product.name}
+                            </TableCell>
+                            <TableCell rowSpan={product.variants.length}>{product.sku}</TableCell>
+                            <TableCell rowSpan={product.variants.length}>{product.category || "N/A"}</TableCell>
+                          </>
+                        ) : null}
+                        <TableCell>{variant.name}</TableCell>
+                        <TableCell className="text-center">
+                          <span className={variant.stock <= 5 ? "text-red-600 font-bold" : ""}>{variant.stock}</span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              variant.stock > 0 ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                            }`}
+                          >
+                            {variant.stock > 0 ? "In Stock" : "Out of Stock"}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    )),
+                  )
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+
+        {!showInventory && (
+          <div className="mt-4 flex justify-center">
+            <Button onClick={() => setShowInventory(true)} className="bg-purple-600 hover:bg-purple-700">
+              Show Inventory Status
+            </Button>
+          </div>
+        )}
       </div>
 
       <Dialog open={showReceiptModal} onOpenChange={setShowReceiptModal}>
@@ -632,9 +1023,9 @@ export default function OrderList() {
           {selectedOrder && (
             <div className="py-4 border rounded-lg p-4 bg-white">
               <div className="text-center mb-4">
-                <h3 className="font-bold text-lg">RESTAURANT NAME</h3>
-                <p className="text-sm">123 Main Street, City</p>
-                <p className="text-sm">Tel: (123) 456-7890</p>
+                <h3 className="font-bold text-lg">{restaurantDetails.name}</h3>
+                <p className="text-sm">{restaurantDetails.address}</p>
+                <p className="text-sm">{restaurantDetails.phone}</p>
                 <p className="text-sm">{selectedOrder.createdAt.toDate().toLocaleString()}</p>
                 <p className="text-sm">Order #: {selectedOrder.id.slice(-6)}</p>
               </div>

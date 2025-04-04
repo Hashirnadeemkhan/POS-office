@@ -802,13 +802,7 @@ export default function POS() {
               <ClipboardList size={20} />
               <span>Order List</span>
             </Link>
-            <Link
-              href="/pos/history"
-              className="flex items-center gap-2 p-3 rounded-lg text-gray-700 hover:bg-gray-100"
-            >
-              <History size={20} />
-              <span>History</span>
-            </Link>
+         
             <Link
               href="/pos/reports"
               className="flex items-center gap-2 p-3 rounded-lg text-gray-700 hover:bg-gray-100"
@@ -877,13 +871,7 @@ export default function POS() {
             <ClipboardList size={20} />
             <span className="text-xs">Order List</span>
           </Link>
-          <Link
-            href="/pos/history"
-            className="flex flex-col items-center text-gray-500 hover:text-purple-600 transition-colors"
-          >
-            <History size={20} />
-            <span className="text-xs">History</span>
-          </Link>
+      
           <Link
             href="/pos/reports"
             className="flex flex-col items-center text-gray-500 hover:text-purple-600 transition-colors"

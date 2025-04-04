@@ -18,7 +18,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 interface UserProfile {
   displayName: string;
   email: string;
-  phoneNumber: string;
   role: "admin" | "superadmin";
 }
 
@@ -31,7 +30,6 @@ export default function EditProfile() {
   const [profile, setProfile] = useState<UserProfile>({
     displayName: "",
     email: "",
-    phoneNumber: "",
     role: "admin",
   });
 
@@ -54,7 +52,6 @@ export default function EditProfile() {
         setProfile({
           displayName: user.displayName || userData.name || "",
           email: user.email || "",
-          phoneNumber: userData.phoneNumber || "",
           role: userRole || userData.role || "admin",
         });
       } catch (error: unknown) {
@@ -101,7 +98,6 @@ export default function EditProfile() {
 
       const updateData: any = {
         name: profile.displayName,
-        phoneNumber: profile.phoneNumber,
       };
 
       if (userRole === "superadmin") {
@@ -201,16 +197,6 @@ export default function EditProfile() {
                 onChange={handleChange}
                 placeholder="Your email"
                 disabled={userRole !== "superadmin"}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="phoneNumber">Phone Number</Label>
-              <Input
-                id="phoneNumber"
-                name="phoneNumber"
-                value={profile.phoneNumber}
-                onChange={handleChange}
-                placeholder="Your phone number"
               />
             </div>
 
