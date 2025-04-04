@@ -161,10 +161,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   if (authState.loading) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-gray-50">
-        <div className="text-lg font-semibold text-gray-700">Loading...</div>
+        <div className="flex items-center space-x-2">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-lg font-semibold text-gray-700">Loading...</span>
+        </div>
       </div>
     );
   }
+  
 
   return (
     <AuthContext.Provider value={{ ...authState, getIdToken, logout }}>
