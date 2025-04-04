@@ -1,6 +1,7 @@
 "use client"
 
-import React, { useState, useRef, useEffect } from "react"
+import type React from "react"
+import { useState, useRef, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { PlusCircle, Trash2, ArrowLeft, Upload, X, ImageIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -53,6 +54,7 @@ export default function AddProductPage() {
   const [name, setName] = useState("")
   const [sku, setSku] = useState("")
   const [basePrice, setBasePrice] = useState("")
+  const [quantity, setQuantity] = useState("")
   const [description, setDescription] = useState("")
   const [status, setStatus] = useState<"active" | "inactive">("active")
 
@@ -84,13 +86,13 @@ export default function AddProductPage() {
 
   // Fetch categories (restaurant-specific)
   useEffect(() => {
-    if (!restaurantId) return;
+    if (!restaurantId) return
 
     const q = query(
       collection(posDb, "categories"),
       where("restaurantId", "==", restaurantId), // Filter by restaurantId
-      orderBy("name")
-    );
+      orderBy("name"),
+    )
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
@@ -98,32 +100,32 @@ export default function AddProductPage() {
           id: doc.id,
           name: doc.data().name,
           restaurantId: doc.data().restaurantId,
-        }));
-        setCategories(cats);
+        }))
+        setCategories(cats)
       },
       (error) => {
-        console.error("Error fetching categories:", error);
-        toast.error("Failed to load categories");
-      }
-    );
-    return () => unsubscribe();
-  }, [restaurantId]);
+        console.error("Error fetching categories:", error)
+        toast.error("Failed to load categories")
+      },
+    )
+    return () => unsubscribe()
+  }, [restaurantId])
 
   // Fetch subcategories when category changes (restaurant-specific)
   useEffect(() => {
     if (!restaurantId || !category) {
-      setSubcategories([]);
-      return;
+      setSubcategories([])
+      return
     }
 
-    const selectedCategory = categories.find((cat) => cat.name === category);
+    const selectedCategory = categories.find((cat) => cat.name === category)
     if (selectedCategory) {
       const q = query(
         collection(posDb, "subcategories"),
         where("categoryId", "==", selectedCategory.id),
         where("restaurantId", "==", restaurantId), // Filter by restaurantId
-        orderBy("name")
-      );
+        orderBy("name"),
+      )
       const unsubscribe = onSnapshot(
         q,
         (snapshot) => {
@@ -132,75 +134,75 @@ export default function AddProductPage() {
             name: doc.data().name,
             categoryId: doc.data().categoryId,
             restaurantId: doc.data().restaurantId,
-          }));
-          setSubcategories(subcats);
+          }))
+          setSubcategories(subcats)
         },
         (error) => {
-          console.error("Error fetching subcategories:", error);
-          toast.error("Failed to load subcategories");
-        }
-      );
-      return () => unsubscribe();
+          console.error("Error fetching subcategories:", error)
+          toast.error("Failed to load subcategories")
+        },
+      )
+      return () => unsubscribe()
     }
-  }, [category, categories, restaurantId]);
+  }, [category, categories, restaurantId])
 
   // Handle main image selection
   const handleMainImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setMainImageFile(file);
-      setMainImagePreview(URL.createObjectURL(file));
+      const file = e.target.files[0]
+      setMainImageFile(file)
+      setMainImagePreview(URL.createObjectURL(file))
     }
-  };
+  }
 
   // Handle gallery images selection
   const handleGalleryImagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const newFiles = Array.from(e.target.files);
-      const newPreviews = newFiles.map((file) => URL.createObjectURL(file));
-      setGalleryFiles((prev) => [...prev, ...newFiles]);
-      setGalleryPreviews((prev) => [...prev, ...newPreviews]);
+      const newFiles = Array.from(e.target.files)
+      const newPreviews = newFiles.map((file) => URL.createObjectURL(file))
+      setGalleryFiles((prev) => [...prev, ...newFiles])
+      setGalleryPreviews((prev) => [...prev, ...newPreviews])
     }
-  };
+  }
 
   // Handle variant image selection
   const handleVariantImageChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      const newVariants = [...variants];
+      const file = e.target.files[0]
+      const newVariants = [...variants]
       newVariants[index] = {
         ...newVariants[index],
         imageFile: file,
         imagePreview: URL.createObjectURL(file),
-      };
-      setVariants(newVariants);
+      }
+      setVariants(newVariants)
     }
-  };
+  }
 
   // Remove gallery image
   const removeGalleryImage = (index: number) => {
-    const newFiles = [...galleryFiles];
-    const newPreviews = [...galleryPreviews];
-    URL.revokeObjectURL(newPreviews[index]);
-    newFiles.splice(index, 1);
-    newPreviews.splice(index, 1);
-    setGalleryFiles(newFiles);
-    setGalleryPreviews(newPreviews);
-  };
+    const newFiles = [...galleryFiles]
+    const newPreviews = [...galleryPreviews]
+    URL.revokeObjectURL(newPreviews[index])
+    newFiles.splice(index, 1)
+    newPreviews.splice(index, 1)
+    setGalleryFiles(newFiles)
+    setGalleryPreviews(newPreviews)
+  }
 
   // Remove variant image
   const removeVariantImage = (index: number) => {
-    const newVariants = [...variants];
+    const newVariants = [...variants]
     if (newVariants[index].imagePreview) {
-      URL.revokeObjectURL(newVariants[index].imagePreview);
+      URL.revokeObjectURL(newVariants[index].imagePreview)
     }
     newVariants[index] = {
       ...newVariants[index],
       imageFile: null,
       imagePreview: "",
-    };
-    setVariants(newVariants);
-  };
+    }
+    setVariants(newVariants)
+  }
 
   // Add a new variant
   const addVariant = () => {
@@ -214,150 +216,150 @@ export default function AddProductPage() {
         imageFile: null,
         imagePreview: "",
       },
-    ]);
-  };
+    ])
+  }
 
   // Remove a variant
   const removeVariant = (index: number) => {
-    const newVariants = [...variants];
+    const newVariants = [...variants]
     if (newVariants[index]?.imagePreview) {
-      URL.revokeObjectURL(newVariants[index].imagePreview);
+      URL.revokeObjectURL(newVariants[index].imagePreview)
     }
-    newVariants.splice(index, 1);
-    setVariants(newVariants);
-  };
+    newVariants.splice(index, 1)
+    setVariants(newVariants)
+  }
 
   // Update variant field
   const updateVariant = (index: number, field: keyof Variant, value: string) => {
-    const newVariants = [...variants];
+    const newVariants = [...variants]
     newVariants[index] = {
       ...newVariants[index],
       [field]: value,
-    };
-    setVariants(newVariants);
-  };
+    }
+    setVariants(newVariants)
+  }
 
   // Add attribute to variant
   const addAttribute = (variantIndex: number) => {
-    const newVariants = [...variants];
+    const newVariants = [...variants]
     newVariants[variantIndex] = {
       ...newVariants[variantIndex],
       attributes: [...newVariants[variantIndex].attributes, { key: "", value: "" }],
-    };
-    setVariants(newVariants);
-  };
+    }
+    setVariants(newVariants)
+  }
 
   // Remove attribute from variant
   const removeAttribute = (variantIndex: number, attrIndex: number) => {
-    const newVariants = [...variants];
+    const newVariants = [...variants]
     if (newVariants[variantIndex].attributes.length > 1) {
-      const newAttributes = [...newVariants[variantIndex].attributes];
-      newAttributes.splice(attrIndex, 1);
+      const newAttributes = [...newVariants[variantIndex].attributes]
+      newAttributes.splice(attrIndex, 1)
       newVariants[variantIndex] = {
         ...newVariants[variantIndex],
         attributes: newAttributes,
-      };
-      setVariants(newVariants);
+      }
+      setVariants(newVariants)
     }
-  };
+  }
 
   // Update attribute
   const updateAttribute = (variantIndex: number, attrIndex: number, field: keyof VariantAttribute, value: string) => {
-    const newVariants = [...variants];
-    const newAttributes = [...newVariants[variantIndex].attributes];
+    const newVariants = [...variants]
+    const newAttributes = [...newVariants[variantIndex].attributes]
     newAttributes[attrIndex] = {
       ...newAttributes[attrIndex],
       [field]: value,
-    };
+    }
     newVariants[variantIndex] = {
       ...newVariants[variantIndex],
       attributes: newAttributes,
-    };
-    setVariants(newVariants);
-  };
+    }
+    setVariants(newVariants)
+  }
 
   // Helper to set variant image ref
   const setVariantImageRef = (index: number) => (el: HTMLInputElement | null) => {
-    variantImageRefs.current[index] = el;
-  };
+    variantImageRefs.current[index] = el
+  }
 
   // Add a function to handle basic attributes
   const addBasicAttribute = () => {
-    setBasicAttributes([...basicAttributes, { key: "", value: "" }]);
-  };
+    setBasicAttributes([...basicAttributes, { key: "", value: "" }])
+  }
 
   const removeBasicAttribute = (index: number) => {
     if (basicAttributes.length > 1) {
-      const newAttributes = [...basicAttributes];
-      newAttributes.splice(index, 1);
-      setBasicAttributes(newAttributes);
+      const newAttributes = [...basicAttributes]
+      newAttributes.splice(index, 1)
+      setBasicAttributes(newAttributes)
     }
-  };
+  }
 
   const updateBasicAttribute = (index: number, field: keyof VariantAttribute, value: string) => {
-    const newAttributes = [...basicAttributes];
+    const newAttributes = [...basicAttributes]
     newAttributes[index] = {
       ...newAttributes[index],
       [field]: value,
-    };
-    setBasicAttributes(newAttributes);
-  };
+    }
+    setBasicAttributes(newAttributes)
+  }
 
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
+    e.preventDefault()
+    setIsSubmitting(true)
 
     if (!restaurantId) {
-      toast.error("No restaurant ID found. Please log in again.");
-      setIsSubmitting(false);
-      return;
+      toast.error("No restaurant ID found. Please log in again.")
+      setIsSubmitting(false)
+      return
     }
 
     try {
-      if (!name || !sku || !basePrice) {
-        toast.error("Please fill in all required fields");
-        setIsSubmitting(false);
-        return;
+      if (!name || !sku || !basePrice || !quantity) {
+        toast.error("Please fill in all required fields")
+        setIsSubmitting(false)
+        return
       }
 
       for (const attr of basicAttributes) {
         if (!attr.key || !attr.value) {
-          toast.error("Please fill in all attribute fields");
-          setIsSubmitting(false);
-          return;
+          toast.error("Please fill in all attribute fields")
+          setIsSubmitting(false)
+          return
         }
       }
 
       if (variants.length > 0) {
         for (const variant of variants) {
           if (!variant.name || !variant.price || !variant.stock) {
-            toast.error("Please fill in all variant fields");
-            setIsSubmitting(false);
-            return;
+            toast.error("Please fill in all variant fields")
+            setIsSubmitting(false)
+            return
           }
           for (const attr of variant.attributes) {
             if (!attr.key || !attr.value) {
-              toast.error("Please fill in all attribute fields");
-              setIsSubmitting(false);
-              return;
+              toast.error("Please fill in all attribute fields")
+              setIsSubmitting(false)
+              return
             }
           }
         }
       }
 
-      let mainImageUrl = "";
+      let mainImageUrl = ""
       if (mainImageFile) {
-        const imageId = generateImageId("product_main");
-        mainImageUrl = await saveImage(imageId, mainImageFile);
+        const imageId = generateImageId("product_main")
+        mainImageUrl = await saveImage(imageId, mainImageFile)
       }
 
-      const galleryUrls: string[] = [];
+      const galleryUrls: string[] = []
       if (galleryFiles.length > 0) {
         for (const file of galleryFiles) {
-          const imageId = generateImageId("product_gallery");
-          const url = await saveImage(imageId, file);
-          galleryUrls.push(url);
+          const imageId = generateImageId("product_gallery")
+          const url = await saveImage(imageId, file)
+          galleryUrls.push(url)
         }
       }
 
@@ -365,6 +367,7 @@ export default function AddProductPage() {
         name,
         sku,
         base_price: Number.parseFloat(basePrice),
+        quantity: Number.parseInt(quantity),
         description,
         status,
         category,
@@ -374,13 +377,13 @@ export default function AddProductPage() {
         attributes: basicAttributes,
         restaurantId, // Add restaurantId
         created_at: new Date(),
-      });
+      })
 
       for (const variant of variants) {
-        let variantImageUrl = "";
+        let variantImageUrl = ""
         if (variant.imageFile) {
-          const imageId = generateImageId("variant");
-          variantImageUrl = await saveImage(imageId, variant.imageFile);
+          const imageId = generateImageId("variant")
+          variantImageUrl = await saveImage(imageId, variant.imageFile)
         }
 
         const variantRef = await addDoc(collection(posDb, "variants"), {
@@ -390,7 +393,7 @@ export default function AddProductPage() {
           stock: Number.parseInt(variant.stock),
           image_url: variantImageUrl,
           productRestaurantId: restaurantId, // Add productRestaurantId
-        });
+        })
 
         for (const attr of variant.attributes) {
           await addDoc(collection(posDb, "variant_attributes"), {
@@ -398,28 +401,28 @@ export default function AddProductPage() {
             key_name: attr.key,
             value_name: attr.value,
             variantRestaurantId: restaurantId, // Add variantRestaurantId
-          });
+          })
         }
       }
 
-      if (mainImagePreview) URL.revokeObjectURL(mainImagePreview);
-      galleryPreviews.forEach((url) => URL.revokeObjectURL(url));
+      if (mainImagePreview) URL.revokeObjectURL(mainImagePreview)
+      galleryPreviews.forEach((url) => URL.revokeObjectURL(url))
       variants.forEach((variant) => {
-        if (variant.imagePreview) URL.revokeObjectURL(variant.imagePreview);
-      });
+        if (variant.imagePreview) URL.revokeObjectURL(variant.imagePreview)
+      })
 
-      toast.success("Product added successfully");
-      router.push("/pos/products");
+      toast.success("Product added successfully")
+      router.push("/pos/products")
     } catch (error: any) {
-      console.error("Error adding product:", error.message, error.code);
-      toast.error(`Failed to add product: ${error.message}`);
+      console.error("Error adding product:", error.message, error.code)
+      toast.error(`Failed to add product: ${error.message}`)
     } finally {
-      setIsSubmitting(false);
+      setIsSubmitting(false)
     }
-  };
+  }
 
   if (!restaurantId) {
-    return <div>Please log in to add a product.</div>;
+    return <div>Please log in to add a product.</div>
   }
 
   // Rest of the JSX remains unchanged
@@ -478,6 +481,19 @@ export default function AddProductPage() {
                   value={basePrice}
                   onChange={(e) => setBasePrice(e.target.value)}
                   placeholder="0.00"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="quantity">
+                  Quantity <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="quantity"
+                  type="number"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  placeholder="0"
                   required
                 />
               </div>
@@ -609,9 +625,9 @@ export default function AddProductPage() {
                         size="icon"
                         className="absolute top-1 right-1 h-6 w-6 bg-white rounded-full"
                         onClick={() => {
-                          if (mainImagePreview) URL.revokeObjectURL(mainImagePreview);
-                          setMainImageFile(null);
-                          setMainImagePreview("");
+                          if (mainImagePreview) URL.revokeObjectURL(mainImagePreview)
+                          setMainImageFile(null)
+                          setMainImagePreview("")
                         }}
                       >
                         <X className="h-4 w-4" />
@@ -838,5 +854,6 @@ export default function AddProductPage() {
         </div>
       </form>
     </div>
-  );
+  )
 }
+

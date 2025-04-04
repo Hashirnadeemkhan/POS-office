@@ -17,6 +17,7 @@ import {
   X,
   AlertTriangle,
   Calendar,
+  Package,
 } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -42,6 +43,7 @@ import {
 import { posDb } from "@/firebase/client"
 import { toast } from "sonner"
 import { useAuth } from "@/lib/auth-context"
+import { Badge } from "@/components/ui/badge"
 
 // Types
 interface OrderItem {
@@ -85,6 +87,7 @@ interface Product {
   name: string
   sku: string
   base_price?: number
+  quantity?: number
   description?: string
   status?: "active" | "inactive"
   category?: string
@@ -115,6 +118,7 @@ interface ProductStock {
   name: string
   orderedQuantity: number
   availableStock: number
+  totalStock: number
 }
 
 export default function OrderList() {
@@ -141,7 +145,6 @@ export default function OrderList() {
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [subcategories, setSubcategories] = useState<Subcategory[]>([])
-  const [showInventory, setShowInventory] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState("all")
   const [searchProductTerm, setSearchProductTerm] = useState("")
   const [productStockMap, setProductStockMap] = useState<Record<string, ProductStock>>({})
@@ -329,6 +332,7 @@ export default function OrderList() {
                 name: productData.name || "",
                 sku: productData.sku || "",
                 base_price: productData.base_price,
+                quantity: productData.quantity || 0,
                 description: productData.description,
                 status: productData.status,
                 category: productData.category,
@@ -383,47 +387,78 @@ export default function OrderList() {
   // Calculate stock based on orders and products
   useEffect(() => {
     const calculateStock = () => {
-      const stockMap: Record<string, ProductStock> = {};
+      const stockMap: Record<string, ProductStock> = {}
 
       // Initialize stock from products
       products.forEach((product) => {
+        // For products with quantity field
+        if (product.quantity !== undefined) {
+          const key = `${product.id}-main`
+          stockMap[key] = {
+            productId: product.id,
+            variantId: "main",
+            name: product.name,
+            orderedQuantity: 0,
+            availableStock: product.quantity,
+            totalStock: product.quantity,
+          }
+        }
+
+        // For products with variants
         product.variants.forEach((variant) => {
-          const key = `${product.id}-${variant.id}`;
+          const key = `${product.id}-${variant.id}`
           stockMap[key] = {
             productId: product.id,
             variantId: variant.id,
             name: `${product.name} - ${variant.name}`,
             orderedQuantity: 0,
             availableStock: variant.stock,
-          };
-        });
-      });
+            totalStock: variant.stock,
+          }
+        })
+      })
 
       // Update ordered quantities from orders
       orders.forEach((order) => {
-        order.items.forEach((item) => {
-          // Assuming productId in OrderItem corresponds to variant.id or product.id
-          // Adjust this logic if your OrderItem has a separate variantId field
-          const matchingVariant = products
-            .flatMap((p) => p.variants)
-            .find((v) => v.id === item.productId || v.productRestaurantId === item.productId);
-          if (matchingVariant) {
-            const key = `${matchingVariant.productRestaurantId || matchingVariant.id}-${matchingVariant.id}`;
-            if (stockMap[key]) {
-              stockMap[key].orderedQuantity += item.quantity;
-              stockMap[key].availableStock = Math.max(0, stockMap[key].availableStock - item.quantity);
-            }
-          }
-        });
-      });
+        if (order.status === "completed" || order.status === "pending") {
+          order.items.forEach((item) => {
+            // Try to find the product
+            const product = products.find((p) => p.id === item.productId)
 
-      setProductStockMap(stockMap);
-    };
+            if (product) {
+              // If it's a main product with quantity field
+              const mainKey = `${product.id}-main`
+              if (stockMap[mainKey]) {
+                stockMap[mainKey].orderedQuantity += item.quantity
+                stockMap[mainKey].availableStock = Math.max(
+                  0,
+                  stockMap[mainKey].totalStock - stockMap[mainKey].orderedQuantity,
+                )
+              }
+
+              // If it's a variant
+              product.variants.forEach((variant) => {
+                const variantKey = `${product.id}-${variant.id}`
+                if (stockMap[variantKey]) {
+                  stockMap[variantKey].orderedQuantity += item.quantity
+                  stockMap[variantKey].availableStock = Math.max(
+                    0,
+                    stockMap[variantKey].totalStock - stockMap[variantKey].orderedQuantity,
+                  )
+                }
+              })
+            }
+          })
+        }
+      })
+
+      setProductStockMap(stockMap)
+    }
 
     if (products.length > 0 && orders.length > 0) {
-      calculateStock();
+      calculateStock()
     }
-  }, [products, orders]);
+  }, [products, orders])
 
   useEffect(() => {
     let result = orders
@@ -598,6 +633,29 @@ export default function OrderList() {
       console.error(`Error ${actionType}ing order:`, error)
       toast.error(`Failed to ${actionType} order`)
     }
+  }
+
+  // Get product details for an item
+  const getProductDetails = (productId: string) => {
+    return products.find((p) => p.id === productId)
+  }
+
+  // Get stock info for a product
+  const getStockInfo = (productId: string) => {
+    // Try main product first
+    const mainKey = `${productId}-main`
+    if (productStockMap[mainKey]) {
+      return productStockMap[mainKey]
+    }
+
+    // Try variants
+    const product = products.find((p) => p.id === productId)
+    if (product && product.variants.length > 0) {
+      const variantKey = `${productId}-${product.variants[0].id}`
+      return productStockMap[variantKey]
+    }
+
+    return null
   }
 
   if (!restaurantId) {
@@ -865,29 +923,50 @@ export default function OrderList() {
                             <h4 className="font-medium mb-2">Order Items</h4>
                             <div className="space-y-2">
                               {order.items.map((item, index) => {
-                                const stockKey = `${item.productId}-${item.productId}`; // Adjust if variant IDs are separate
-                                const stockInfo = productStockMap[stockKey] || {
-                                  orderedQuantity: 0,
-                                  availableStock: 0,
-                                };
+                                const product = getProductDetails(item.productId)
+                                const stockInfo = getStockInfo(item.productId)
 
                                 return (
                                   <div
                                     key={`item-${order.id}-${index}`}
-                                    className="flex justify-between items-center border-b pb-2"
+                                    className="flex flex-col md:flex-row md:justify-between items-start md:items-center border-b pb-2"
                                   >
-                                    <div>
-                                      <p>{item.name}</p>
-                                      <p className="text-sm text-gray-500">
-                                        Rs {item.price.toLocaleString()} x {item.quantity}
-                                      </p>
-                                      <p className="text-xs text-gray-600">
-                                        Ordered: {stockInfo.orderedQuantity} | Available: {stockInfo.availableStock}
-                                      </p>
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <p className="font-medium">{item.name}</p>
+                                        <Badge variant="outline" className="ml-2">
+                                          {item.quantity} × Rs {item.price.toLocaleString()}
+                                        </Badge>
+                                      </div>
+
+                                      <div className="flex flex-wrap gap-2 mt-1">
+                                        <div className="flex items-center text-xs">
+                                          <Package className="h-3 w-3 mr-1 text-gray-500" />
+                                          <span className="text-gray-600">
+                                            Total Quantity: {product?.quantity || stockInfo?.totalStock || 0}
+                                          </span>
+                                        </div>
+
+                                        <div className="flex items-center text-xs">
+                                          <span
+                                            className={`${stockInfo?.availableStock === 0 ? "text-red-600" : "text-green-600"} font-medium`}
+                                          >
+                                            Available: {stockInfo?.availableStock || 0}
+                                          </span>
+                                        </div>
+
+                                        <div className="flex items-center text-xs">
+                                          <span className="text-amber-600 font-medium">
+                                            Ordered: {stockInfo?.orderedQuantity || 0}
+                                          </span>
+                                        </div>
+                                      </div>
                                     </div>
-                                    <p className="font-medium">Rs {(item.price * item.quantity).toLocaleString()}</p>
+                                    <p className="font-bold mt-2 md:mt-0">
+                                      Rs {(item.price * item.quantity).toLocaleString()}
+                                    </p>
                                   </div>
-                                );
+                                )
                               })}
                             </div>
                             <div className="mt-4 flex justify-between">
@@ -915,12 +994,9 @@ export default function OrderList() {
           </Table>
         </div>
 
-        <div className={`mt-8 bg-white rounded-lg shadow ${showInventory ? "block" : "hidden"}`}>
+        <div className="mt-8 bg-white rounded-lg shadow">
           <div className="p-4 border-b flex justify-between items-center">
-            <h2 className="text-xl font-bold">Inventory Status</h2>
-            <Button variant="outline" onClick={() => setShowInventory(false)}>
-              Hide Inventory
-            </Button>
+            <h2 className="text-xl font-bold">Product Inventory Status</h2>
           </div>
 
           <div className="p-4 border-b">
@@ -959,60 +1035,60 @@ export default function OrderList() {
                   <TableHead>Product</TableHead>
                   <TableHead>SKU</TableHead>
                   <TableHead>Category</TableHead>
-                  <TableHead>Variant</TableHead>
-                  <TableHead className="text-center">Available Stock</TableHead>
+                  <TableHead className="text-center">Total Quantity</TableHead>
+                  <TableHead className="text-center">Ordered</TableHead>
+                  <TableHead className="text-center">Available</TableHead>
                   <TableHead className="text-center">Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredProducts.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-10 text-gray-500">
+                    <TableCell colSpan={7} className="text-center py-10 text-gray-500">
                       No products found matching your filters
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredProducts.flatMap((product) =>
-                    product.variants.map((variant, index) => (
-                      <TableRow key={`${product.id}-${variant.id}`}>
-                        {index === 0 ? (
-                          <>
-                            <TableCell className="font-medium" rowSpan={product.variants.length}>
-                              {product.name}
-                            </TableCell>
-                            <TableCell rowSpan={product.variants.length}>{product.sku}</TableCell>
-                            <TableCell rowSpan={product.variants.length}>{product.category || "N/A"}</TableCell>
-                          </>
-                        ) : null}
-                        <TableCell>{variant.name}</TableCell>
+                  filteredProducts.map((product) => {
+                    const stockKey = `${product.id}-main`
+                    const stockInfo = productStockMap[stockKey]
+                    const totalQuantity = product.quantity || 0
+                    const orderedQuantity = stockInfo?.orderedQuantity || 0
+                    const availableQuantity = stockInfo?.availableStock || totalQuantity
+
+                    return (
+                      <TableRow key={product.id}>
+                        <TableCell className="font-medium">{product.name}</TableCell>
+                        <TableCell>{product.sku}</TableCell>
+                        <TableCell>{product.category || "N/A"}</TableCell>
+                        <TableCell className="text-center">{totalQuantity}</TableCell>
                         <TableCell className="text-center">
-                          <span className={variant.stock <= 5 ? "text-red-600 font-bold" : ""}>{variant.stock}</span>
+                          <span className="text-amber-600 font-medium">{orderedQuantity}</span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span
+                            className={availableQuantity <= 5 ? "text-red-600 font-bold" : "text-green-600 font-medium"}
+                          >
+                            {availableQuantity}
+                          </span>
                         </TableCell>
                         <TableCell className="text-center">
                           <span
                             className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              variant.stock > 0 ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                              availableQuantity > 0 ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
                             }`}
                           >
-                            {variant.stock > 0 ? "In Stock" : "Out of Stock"}
+                            {availableQuantity > 0 ? "In Stock" : "Out of Stock"}
                           </span>
                         </TableCell>
                       </TableRow>
-                    )),
-                  )
+                    )
+                  })
                 )}
               </TableBody>
             </Table>
           </div>
         </div>
-
-        {!showInventory && (
-          <div className="mt-4 flex justify-center">
-            <Button onClick={() => setShowInventory(true)} className="bg-purple-600 hover:bg-purple-700">
-              Show Inventory Status
-            </Button>
-          </div>
-        )}
       </div>
 
       <Dialog open={showReceiptModal} onOpenChange={setShowReceiptModal}>
@@ -1124,3 +1200,4 @@ export default function OrderList() {
     </div>
   )
 }
+

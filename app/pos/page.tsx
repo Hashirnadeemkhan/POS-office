@@ -6,7 +6,6 @@ import Image from "next/image"
 import {
   Home,
   ClipboardList,
-  History,
   BarChart2,
   Search,
   MinusCircle,
@@ -44,13 +43,14 @@ interface Product {
   name: string
   sku: string
   base_price: number
+  quantity?: number
   description?: string
   status?: "active" | "inactive"
   category?: string
   subcategory?: string
   main_image_url?: string
   gallery_images?: string[]
-  restaurantId: string // Added restaurantId
+  restaurantId: string
 }
 
 interface Category {
@@ -171,7 +171,7 @@ export default function POS() {
       const categoriesQuery = query(
         collection(posDb, "categories"),
         where("restaurantId", "==", restaurantId), // Filter by restaurantId
-        orderBy("name")
+        orderBy("name"),
       )
       const categoriesSnapshot = await getDocs(categoriesQuery)
       const categoriesData: Category[] = [
@@ -198,7 +198,7 @@ export default function POS() {
       const productsQuery = query(
         collection(posDb, "products"),
         where("restaurantId", "==", restaurantId), // Filter by restaurantId
-        orderBy("name")
+        orderBy("name"),
       )
       const allProductsSnapshot = await getDocs(productsQuery)
       const allProductsData = allProductsSnapshot.docs
@@ -208,6 +208,7 @@ export default function POS() {
           name: doc.data().name || "",
           sku: doc.data().sku || "",
           base_price: doc.data().base_price || 0,
+          quantity: doc.data().quantity,
           description: doc.data().description,
           status: doc.data().status,
           category: doc.data().category,
@@ -802,7 +803,7 @@ export default function POS() {
               <ClipboardList size={20} />
               <span>Order List</span>
             </Link>
-         
+
             <Link
               href="/pos/reports"
               className="flex items-center gap-2 p-3 rounded-lg text-gray-700 hover:bg-gray-100"
@@ -871,7 +872,7 @@ export default function POS() {
             <ClipboardList size={20} />
             <span className="text-xs">Order List</span>
           </Link>
-      
+
           <Link
             href="/pos/reports"
             className="flex flex-col items-center text-gray-500 hover:text-purple-600 transition-colors"
@@ -982,7 +983,9 @@ export default function POS() {
                     <h3 className="font-medium text-gray-900 line-clamp-1">{product.name}</h3>
                     <div className="flex flex-wrap gap-2 mt-1">
                       <div className="text-xs px-2 py-1 rounded-full inline-block bg-green-100 text-green-800">
-                        Available
+                        {product.quantity !== undefined && product.quantity > 0
+                          ? `${product.quantity} in stock`
+                          : "Out of stock"}
                       </div>
                       <div className="text-xs px-2 py-1 rounded-full inline-block bg-purple-100 text-purple-800">
                         {product.category || "Uncategorized"}
@@ -1005,6 +1008,7 @@ export default function POS() {
                         size="icon"
                         onClick={() => handleQuantityChange(product.id, 1)}
                         className="text-purple-600 p-1 rounded-md hover:bg-purple-100"
+                        disabled={product.quantity !== undefined && quantities[product.id] >= product.quantity}
                       >
                         <PlusCircle size={20} />
                       </Button>
@@ -1293,7 +1297,12 @@ export default function POS() {
                     </div>
                     <div className="p-2">
                       <h3 className="font-medium text-gray-900 text-sm line-clamp-1">{product.name}</h3>
-                      <p className="font-bold text-gray-900 text-sm mt-1">Rs {product.base_price.toLocaleString()}</p>
+                      <div className="flex items-center justify-between">
+                        <p className="font-bold text-gray-900 text-sm">Rs {product.base_price.toLocaleString()}</p>
+                        <span className="text-xs text-gray-600">
+                          {product.quantity !== undefined ? `${product.quantity} left` : ""}
+                        </span>
+                      </div>
                       <div className="flex items-center justify-between mt-2">
                         <Button
                           variant="ghost"
@@ -1310,6 +1319,7 @@ export default function POS() {
                           size="sm"
                           onClick={() => handleQuantityChange(product.id, 1)}
                           className="text-purple-600 p-1 rounded-md hover:bg-purple-100 h-8 w-8"
+                          disabled={product.quantity !== undefined && quantities[product.id] >= product.quantity}
                         >
                           <PlusCircle size={16} />
                         </Button>
@@ -1339,3 +1349,4 @@ export default function POS() {
     </div>
   )
 }
+

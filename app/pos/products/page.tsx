@@ -34,6 +34,7 @@ interface Product {
   name: string
   sku: string
   base_price?: number
+  quantity?: number
   description?: string
   status?: "active" | "inactive"
   category?: string
@@ -92,7 +93,7 @@ export default function ProductsPage() {
     const q = query(
       collection(posDb, "categories"),
       where("restaurantId", "==", restaurantId), // Add restaurantId filter
-      orderBy("name")
+      orderBy("name"),
     )
     const unsubscribe = onSnapshot(
       q,
@@ -107,7 +108,7 @@ export default function ProductsPage() {
       (error) => {
         console.error("Error fetching categories:", error)
         toast.error("Failed to load categories.")
-      }
+      },
     )
     return () => unsubscribe()
   }, [restaurantId])
@@ -119,7 +120,7 @@ export default function ProductsPage() {
     const q = query(
       collection(posDb, "subcategories"),
       where("restaurantId", "==", restaurantId), // Add restaurantId filter
-      orderBy("name")
+      orderBy("name"),
     )
     const unsubscribe = onSnapshot(
       q,
@@ -135,7 +136,7 @@ export default function ProductsPage() {
       (error) => {
         console.error("Error fetching subcategories:", error)
         toast.error("Failed to load subcategories.")
-      }
+      },
     )
     return () => unsubscribe()
   }, [restaurantId])
@@ -150,7 +151,7 @@ export default function ProductsPage() {
         let q = query(
           collection(posDb, "products"),
           where("restaurantId", "==", restaurantId), // Add restaurantId filter
-          orderBy("name")
+          orderBy("name"),
         )
 
         if (filterCategory && filterCategory !== "all") {
@@ -173,7 +174,7 @@ export default function ProductsPage() {
               const variantsQuery = query(
                 collection(posDb, "variants"),
                 where("product_id", "==", docSnapshot.id),
-                where("productRestaurantId", "==", restaurantId) // Add restaurantId filter
+                where("productRestaurantId", "==", restaurantId), // Add restaurantId filter
               )
               const variantsSnapshot = await getDocs(variantsQuery)
               const variants: Variant[] = []
@@ -185,7 +186,7 @@ export default function ProductsPage() {
                 const attributesQuery = query(
                   collection(posDb, "variant_attributes"),
                   where("variant_id", "==", variantDoc.id),
-                  where("variantRestaurantId", "==", restaurantId) // Add restaurantId filter
+                  where("variantRestaurantId", "==", restaurantId), // Add restaurantId filter
                 )
                 const attributesSnapshot = await getDocs(attributesQuery)
                 const attributes = attributesSnapshot.docs.map((attrDoc) => ({
@@ -209,6 +210,7 @@ export default function ProductsPage() {
                 name: productData.name || "",
                 sku: productData.sku || "",
                 base_price: productData.base_price,
+                quantity: productData.quantity,
                 description: productData.description,
                 status: productData.status,
                 category: productData.category,
@@ -227,7 +229,7 @@ export default function ProductsPage() {
             console.error("Error fetching products:", error)
             toast.error("Failed to load products")
             setIsLoading(false)
-          }
+          },
         )
 
         return () => unsubscribe()
@@ -254,7 +256,7 @@ export default function ProductsPage() {
           const attributesQuery = query(
             collection(posDb, "variant_attributes"),
             where("variant_id", "==", variant.id),
-            where("variantRestaurantId", "==", restaurantId)
+            where("variantRestaurantId", "==", restaurantId),
           )
           const attributesSnapshot = await getDocs(attributesQuery)
 
@@ -293,7 +295,7 @@ export default function ProductsPage() {
   const filteredProducts = products.filter(
     (product) =>
       product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.sku.toLowerCase().includes(searchTerm.toLowerCase())
+      product.sku.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
   // Update total pages whenever filtered products change
@@ -304,10 +306,7 @@ export default function ProductsPage() {
     }
   }, [filteredProducts, currentPage])
 
-  const paginatedProducts = filteredProducts.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
-  )
+  const paginatedProducts = filteredProducts.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
 
   if (!restaurantId) {
     return <div>Please log in to view products.</div>
@@ -353,7 +352,11 @@ export default function ProductsPage() {
               >
                 <option value="all">All Subcategories</option>
                 {subcategories
-                  .filter((subcat) => filterCategory === "all" || subcat.categoryId === categories.find(cat => cat.name === filterCategory)?.id)
+                  .filter(
+                    (subcat) =>
+                      filterCategory === "all" ||
+                      subcat.categoryId === categories.find((cat) => cat.name === filterCategory)?.id,
+                  )
                   .map((subcategory) => (
                     <option key={subcategory.id} value={subcategory.name}>
                       {subcategory.name}
@@ -373,6 +376,7 @@ export default function ProductsPage() {
                   <th className="text-center py-3">Name</th>
                   <th className="text-center py-3">SKU</th>
                   <th className="text-center py-3">Base Price</th>
+                  <th className="text-center py-3">Quantity</th>
                   <th className="text-center py-3">Category</th>
                   <th className="text-center py-3">Status</th>
                   <th className="text-center py-3">Variants</th>
@@ -414,7 +418,7 @@ export default function ProductsPage() {
                           {product.main_image_url ? (
                             <div className="relative w-12 h-12 mx-auto rounded-md overflow-hidden">
                               <Image
-                                src={product.main_image_url}
+                                src={product.main_image_url || "/placeholder.svg"}
                                 alt={product.name}
                                 fill
                                 className="object-cover"
@@ -430,6 +434,9 @@ export default function ProductsPage() {
                         <td className="text-center py-3">{product.sku}</td>
                         <td className="text-center py-3">
                           {product.base_price !== undefined ? `$${product.base_price.toFixed(2)}` : "N/A"}
+                        </td>
+                        <td className="text-center py-3">
+                          {product.quantity !== undefined ? product.quantity : "N/A"}
                         </td>
                         <td className="text-center py-3">{product.category || "N/A"}</td>
                         <td className="text-center py-3">
@@ -479,7 +486,7 @@ export default function ProductsPage() {
                                         className="relative w-20 h-20 flex-shrink-0 rounded-md overflow-hidden"
                                       >
                                         <Image
-                                          src={imageUrl}
+                                          src={imageUrl || "/placeholder.svg"}
                                           alt={`${product.name} gallery ${index + 1}`}
                                           fill
                                           className="object-cover"
@@ -498,7 +505,7 @@ export default function ProductsPage() {
                                       {variant.image_url ? (
                                         <div className="relative w-16 h-16 rounded-md overflow-hidden flex-shrink-0">
                                           <Image
-                                            src={variant.image_url}
+                                            src={variant.image_url || "/placeholder.svg"}
                                             alt={variant.name}
                                             fill
                                             className="object-cover"
@@ -584,3 +591,4 @@ export default function ProductsPage() {
     </div>
   )
 }
+
