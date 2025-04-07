@@ -11,7 +11,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { PlusCircle, Eye, Pencil, Trash2, Power, PowerOff, MoreHorizontal } from "lucide-react";
-import { useAuth } from "@/lib/auth-context"; // Import useAuth
+import { useAuth } from "@/lib/auth-context";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,16 +45,16 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [restaurantToDelete, setRestaurantToDelete] = useState<string | null>(null);
   const router = useRouter();
-  const { getIdToken } = useAuth(); // Get the ID token from auth context
+  const { getIdToken } = useAuth();
 
   const fetchRestaurants = useCallback(async () => {
     setIsLoading(true);
     try {
-      const idToken = await getIdToken(); // Fetch the ID token
+      const idToken = await getIdToken();
       const url = showViewAllButton ? "/api/restaurants/get?limit=3" : "/api/restaurants/get";
       const response = await fetch(url, {
         headers: {
-          Authorization: `Bearer ${idToken}`, // Include the token in the request
+          Authorization: `Bearer ${idToken}`,
         },
       });
       const data = await response.json();
@@ -82,6 +82,43 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
   useEffect(() => {
     fetchRestaurants();
   }, [fetchRestaurants]);
+
+  const handleImpersonate = async (restaurantId: string) => {
+    try {
+      console.log("handleImpersonate: Starting impersonation for restaurantId:", restaurantId);
+      const idToken = await getIdToken();
+      console.log("handleImpersonate: Fetched ID token:", idToken);
+  
+      const response = await fetch("/api/impersonate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ restaurantId }),
+      });
+  
+      console.log("handleImpersonate: Response status:", response.status);
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("handleImpersonate: Impersonation failed:", errorData);
+        throw new Error(errorData.error || "Failed to initiate impersonation");
+      }
+  
+      const { sessionToken, restaurantId: returnedRestaurantId } = await response.json();
+      console.log("handleImpersonate: Impersonation successful, sessionToken:", sessionToken, "restaurantId:", returnedRestaurantId);
+  
+      console.log("handleImpersonate: Redirecting to /pos/dashboard...");
+      window.location.href = "/pos/dashboard";
+    } catch (error) {
+      console.error("handleImpersonate: Error impersonating restaurant:", error);
+      if (error instanceof Error) {
+        toast.error(`Failed to impersonate restaurant: ${error.message}`);
+      } else {
+        toast.error("Failed to impersonate restaurant: Unknown error");
+      }
+    }
+  };
 
   const handleToggleStatus = async (id: string, currentStatus: boolean) => {
     try {
@@ -170,7 +207,7 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
                 <TableHead>Email</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Created</TableHead>
-                <TableHead>Last Updated</TableHead>
+                <TableHead>LastUpdated</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -247,6 +284,10 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleImpersonate(restaurant.id)}>
+                              <Eye className="mr-2 h-4 w-4 text-purple-600" />
+                              <span className="text-purple-600">Impersonate</span>
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => router.push(`/admin/restaurants/view/${restaurant.id}`)}>
                               <Eye className="mr-2 h-4 w-4 text-blue-600" />
                               <span className="text-blue-600">View</span>

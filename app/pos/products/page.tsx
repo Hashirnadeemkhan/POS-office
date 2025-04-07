@@ -2,15 +2,17 @@
 
 import React, { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { PlusCircle, Pencil, Trash2, ChevronDown, ChevronUp, ImageIcon } from "lucide-react"
+import { PlusCircle, Pencil, Trash2, ChevronDown, ChevronUp, ImageIcon } from 'lucide-react'
 import { Button } from "@/components/ui/button"
-import { collection, query, getDocs, deleteDoc, doc, where, orderBy, onSnapshot } from "firebase/firestore"
+import { collection, query, getDocs, deleteDoc, doc, where, orderBy, onSnapshot, Timestamp } from "firebase/firestore"
 import { posDb } from "@/firebase/client"
 import { toast } from "sonner"
 import { DeleteProductDialog } from "@/src/components/DeleteProductDialog"
 import { deleteImage, getImageIdFromUrl } from "@/lib/imageStorage"
 import Image from "next/image"
 import { useAuth } from "@/lib/auth-context" // Import useAuth to get restaurantId
+import { useInventory } from "@/hooks/use-inventory"
+import { ProductStockBadge } from "@/src/components/pos/product-stock-badge"
 
 // Define interfaces for our data
 interface VariantAttribute {
@@ -58,6 +60,26 @@ interface Subcategory {
   restaurantId?: string // Add this field
 }
 
+interface OrderItem {
+  productId: string
+  name: string
+  price: number
+  quantity: number
+  image?: string
+}
+
+interface Order {
+  id: string
+  items: OrderItem[]
+  subtotal: number
+  tax: number
+  total: number
+  paymentMethod: string
+  status: string
+  createdAt: Timestamp
+  restaurantId: string
+}
+
 export default function ProductsPage() {
   const router = useRouter()
   const { user } = useAuth() // Get the logged-in user
@@ -75,6 +97,10 @@ export default function ProductsPage() {
   const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean>>({})
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  const [orders, setOrders] = useState<Order[]>([])
+  const [productStockMap, setProductStockMap] = useState<Record<string, number>>({})
+
+  const { stockMap, isLoading: inventoryLoading } = useInventory()
 
   const ITEMS_PER_PAGE = 10
 
@@ -139,6 +165,54 @@ export default function ProductsPage() {
       },
     )
     return () => unsubscribe()
+  }, [restaurantId])
+
+  // Fetch orders to calculate stock
+  useEffect(() => {
+    if (!restaurantId) return
+
+    const fetchOrders = async () => {
+      try {
+        // Get today's orders
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        const tomorrow = new Date(today)
+        tomorrow.setDate(tomorrow.getDate() + 1)
+
+        const startTimestamp = Timestamp.fromDate(today)
+        const endTimestamp = Timestamp.fromDate(tomorrow)
+
+        const q = query(
+          collection(posDb, "orders"),
+          where("restaurantId", "==", restaurantId),
+          where("status", "in", ["completed", "pending"]),
+          orderBy("createdAt", "desc"),
+        )
+
+        const querySnapshot = await getDocs(q)
+        const ordersData: Order[] = querySnapshot.docs.map((doc) => {
+          const data = doc.data()
+          return {
+            id: doc.id,
+            items: data.items || [],
+            subtotal: data.subtotal || 0,
+            tax: data.tax || 0,
+            total: data.total || 0,
+            paymentMethod: data.paymentMethod || "cash",
+            status: data.status || "completed",
+            createdAt: data.createdAt,
+            restaurantId: data.restaurantId,
+          }
+        })
+
+        setOrders(ordersData)
+      } catch (error) {
+        console.error("Error fetching orders:", error)
+        toast.error("Failed to load orders")
+      }
+    }
+
+    fetchOrders()
   }, [restaurantId])
 
   // Fetch products, variants, and attributes (restaurant-specific)
@@ -243,6 +317,31 @@ export default function ProductsPage() {
     fetchProducts()
   }, [restaurantId, filterCategory, filterSubcategory])
 
+  // Calculate stock based on orders and products
+  useEffect(() => {
+    const calculateStock = () => {
+      const stockMap: Record<string, number> = {}
+
+      // Calculate ordered quantities from orders
+      orders.forEach((order) => {
+        if (order.status === "completed" || order.status === "pending") {
+          order.items.forEach((item) => {
+            if (!stockMap[item.productId]) {
+              stockMap[item.productId] = 0
+            }
+            stockMap[item.productId] += item.quantity
+          })
+        }
+      })
+
+      setProductStockMap(stockMap)
+    }
+
+    if (orders.length > 0) {
+      calculateStock()
+    }
+  }, [orders])
+
   // Handle product deletion
   const handleDeleteProduct = async () => {
     if (selectedProduct) {
@@ -306,7 +405,16 @@ export default function ProductsPage() {
     }
   }, [filteredProducts, currentPage])
 
-  const paginatedProducts = filteredProducts.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
+  const paginatedProducts = filteredProducts
+    .map((product) => {
+      const stockInfo = stockMap[`${product.id}-main`]
+      return {
+        ...product,
+        availableQuantity: stockInfo?.availableStock || 0,
+        orderedQuantity: stockInfo?.orderedQuantity || 0,
+      }
+    })
+    .slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
 
   if (!restaurantId) {
     return <div>Please log in to view products.</div>
@@ -436,7 +544,16 @@ export default function ProductsPage() {
                           {product.base_price !== undefined ? `$${product.base_price.toFixed(2)}` : "N/A"}
                         </td>
                         <td className="text-center py-3">
-                          {product.quantity !== undefined ? product.quantity : "N/A"}
+                          {product.quantity !== undefined ? (
+                            <div className="flex flex-col">
+                              <span className={product.availableQuantity <= 5 ? "text-red-600 font-bold" : ""}>
+                                {product.availableQuantity} available
+                              </span>
+                              <span className="text-xs text-gray-500">({product.orderedQuantity} ordered)</span>
+                            </div>
+                          ) : (
+                            "N/A"
+                          )}
                         </td>
                         <td className="text-center py-3">{product.category || "N/A"}</td>
                         <td className="text-center py-3">
@@ -522,6 +639,11 @@ export default function ProductsPage() {
                                           <div className="flex space-x-4 text-sm">
                                             <span>Price: ${variant.price.toFixed(2)}</span>
                                             <span>Stock: {variant.stock}</span>
+                                            {productStockMap[product.id] > 0 && (
+                                              <span className="text-amber-600">
+                                                ({productStockMap[product.id]} ordered)
+                                              </span>
+                                            )}
                                           </div>
                                         </div>
                                         {variant.attributes.length > 0 && (
@@ -539,6 +661,9 @@ export default function ProductsPage() {
                                             </div>
                                           </div>
                                         )}
+                                        <div className="mt-2">
+                                          <ProductStockBadge productId={product.id} variantId={variant.id} />
+                                        </div>
                                       </div>
                                     </div>
                                   </div>
@@ -591,4 +716,3 @@ export default function ProductsPage() {
     </div>
   )
 }
-

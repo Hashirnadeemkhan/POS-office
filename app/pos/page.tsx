@@ -33,10 +33,12 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { Drawer, DrawerContent, DrawerTrigger } from "@/components/ui/drawer"
-import { collection, query, getDocs, orderBy, addDoc, serverTimestamp, doc, getDoc, where } from "firebase/firestore" // Added 'where'
+import { collection, query, getDocs, orderBy, addDoc, serverTimestamp, doc, getDoc, where } from "firebase/firestore"
 import { posDb } from "@/firebase/client"
 import { useAuth } from "@/lib/auth-context"
 import { toast } from "sonner"
+import { useInventory } from "@/hooks/use-inventory"
+import { ProductStockBadge } from "@/src/components/pos/product-stock-badge"
 
 interface Product {
   id: string
@@ -58,7 +60,7 @@ interface Category {
   name: string
   icon: string
   itemCount: number
-  restaurantId?: string // Added restaurantId
+  restaurantId?: string
 }
 
 interface OrderItem {
@@ -67,6 +69,7 @@ interface OrderItem {
   price: number
   quantity: number
   image?: string
+  variantId?: string // Added for consistency with InventoryManager
 }
 
 interface Order {
@@ -85,32 +88,34 @@ interface Order {
 export default function POS() {
   const { logout, userId } = useAuth()
   const router = useRouter()
-  const restaurantId = userId // Use userId as restaurantId
+  const restaurantId = userId
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
-  const [selectedCategory, setSelectedCategory] = useState("all")
-  const [searchQuery, setSearchQuery] = useState("")
-  const [quantities, setQuantities] = useState<{ [key: string]: number }>({})
+  const [selectedCategory, setSelectedCategory] = useState<string>("all")
+  const [searchQuery, setSearchQuery] = useState<string>("")
+  const [quantities, setQuantities] = useState<Record<string, number>>({})
   const [orderItems, setOrderItems] = useState<OrderItem[]>([])
-  const [subtotal, setSubtotal] = useState(0)
-  const [tax, setTax] = useState(0)
-  const [total, setTotal] = useState(0)
-  const [isLoading, setIsLoading] = useState(true)
-  const [showPaymentModal, setShowPaymentModal] = useState(false)
-  const [paymentMethod, setPaymentMethod] = useState("cash")
-  const [showReceiptModal, setShowReceiptModal] = useState(false)
+  const [subtotal, setSubtotal] = useState<number>(0)
+  const [tax, setTax] = useState<number>(0)
+  const [total, setTotal] = useState<number>(0)
+  const [isLoading, setIsLoading] = useState<boolean>(true)
+  const [showPaymentModal, setShowPaymentModal] = useState<boolean>(false)
+  const [paymentMethod, setPaymentMethod] = useState<string>("cash")
+  const [showReceiptModal, setShowReceiptModal] = useState<boolean>(false)
   const [currentOrder, setCurrentOrder] = useState<Order | null>(null)
   const TAX_RATE = 0.1 // 10% tax rate
-  const [showNewOrderModal, setShowNewOrderModal] = useState(false)
-  const [customerName, setCustomerName] = useState("")
-  const [customerPhone, setCustomerPhone] = useState("")
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [cartOpen, setCartOpen] = useState(false)
+  const [showNewOrderModal, setShowNewOrderModal] = useState<boolean>(false)
+  const [customerName, setCustomerName] = useState<string>("")
+  const [customerPhone, setCustomerPhone] = useState<string>("")
+  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false)
+  const [cartOpen, setCartOpen] = useState<boolean>(false)
   const [restaurantDetails, setRestaurantDetails] = useState({
     name: "RESTAURANT NAME",
     address: "123 Main Street, City",
     phone: "Tel: (123) 456-7890",
   })
+
+  const { stockMap, isProductAvailable, processOrder } = useInventory()
 
   const currentDate = new Date()
   const formattedDate = currentDate.toLocaleDateString("en-US", {
@@ -167,11 +172,10 @@ export default function POS() {
 
     setIsLoading(true)
     try {
-      // Fetch categories for this restaurant
       const categoriesQuery = query(
         collection(posDb, "categories"),
-        where("restaurantId", "==", restaurantId), // Filter by restaurantId
-        orderBy("name"),
+        where("restaurantId", "==", restaurantId),
+        orderBy("name")
       )
       const categoriesSnapshot = await getDocs(categoriesQuery)
       const categoriesData: Category[] = [
@@ -194,11 +198,10 @@ export default function POS() {
         })
       })
 
-      // Fetch products for this restaurant
       const productsQuery = query(
         collection(posDb, "products"),
-        where("restaurantId", "==", restaurantId), // Filter by restaurantId
-        orderBy("name"),
+        where("restaurantId", "==", restaurantId),
+        orderBy("name")
       )
       const allProductsSnapshot = await getDocs(productsQuery)
       const allProductsData = allProductsSnapshot.docs
@@ -215,7 +218,7 @@ export default function POS() {
           subcategory: doc.data().subcategory,
           main_image_url: doc.data().main_image_url || "",
           gallery_images: doc.data().gallery_images || [],
-          restaurantId: doc.data().restaurantId, // Include restaurantId
+          restaurantId: doc.data().restaurantId,
         }))
 
       const updatedCategories = categoriesData.map((category) => {
@@ -240,7 +243,7 @@ export default function POS() {
 
       setProducts(productsData)
 
-      const initialQuantities: { [key: string]: number } = {}
+      const initialQuantities: Record<string, number> = {}
       productsData.forEach((product: Product) => {
         initialQuantities[product.id] = 0
       })
@@ -251,16 +254,15 @@ export default function POS() {
     } finally {
       setIsLoading(false)
     }
-  }, [restaurantId, selectedCategory]) // Added restaurantId to dependencies
+  }, [restaurantId, selectedCategory])
 
   useEffect(() => {
     fetchData()
     fetchRestaurantData()
   }, [fetchData, fetchRestaurantData])
 
-  // Rest of the functions remain unchanged (getCategoryIconName, handleQuantityChange, etc.)
   const getCategoryIconName = (categoryName: string): string => {
-    const categoryMap: { [key: string]: string } = {
+    const categoryMap: Record<string, string> = {
       Appetizers: "appetizer",
       Chicken: "chicken",
       Burgers: "steak",
@@ -289,7 +291,7 @@ export default function POS() {
       if (quantity > 0) {
         const product = products.find((p) => p.id === productId)
         if (product) {
-          const orderItem = {
+          const orderItem: OrderItem = {
             productId,
             name: product.name,
             price: product.base_price,
@@ -309,7 +311,9 @@ export default function POS() {
     setTotal(subtotalAmount + taxAmount)
   }, [quantities, products])
 
-  const filteredProducts = products.filter((product) => product.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredProducts = products.filter((product) =>
+    product.name.toLowerCase().includes(searchQuery.toLowerCase())
+  )
 
   const handlePayment = () => {
     if (orderItems.length === 0) {
@@ -336,6 +340,14 @@ export default function POS() {
     }
 
     try {
+      // Use the state orderItems directly instead of redeclaring it
+      const inventoryProcessed = await processOrder(orderItems)
+
+      if (!inventoryProcessed) {
+        toast.error("Some items are no longer available in the requested quantity")
+        return
+      }
+
       const orderData = {
         items: orderItems,
         subtotal,
@@ -346,7 +358,7 @@ export default function POS() {
         createdAt: serverTimestamp(),
         customerName,
         customerPhone,
-        restaurantId, // Add restaurantId to order
+        restaurantId,
       }
 
       const docRef = await addDoc(collection(posDb, "orders"), orderData)
@@ -368,7 +380,7 @@ export default function POS() {
       setShowPaymentModal(false)
       setShowReceiptModal(true)
 
-      const resetQuantities: { [key: string]: number } = {}
+      const resetQuantities: Record<string, number> = {}
       products.forEach((product) => {
         resetQuantities[product.id] = 0
       })
@@ -436,7 +448,7 @@ export default function POS() {
                     <span>$${(item.price * item.quantity).toFixed(2)}</span>
                   </div>
                 </div>
-              `,
+              `
                 )
                 .join("")}
             </div>
@@ -696,7 +708,6 @@ export default function POS() {
     return <div>Please log in to access the POS system.</div>
   }
 
-  // JSX remains unchanged
   return (
     <div className="min-h-screen bg-white flex flex-col">
       {/* Mobile Header */}
@@ -944,7 +955,9 @@ export default function POS() {
               >
                 {getCategoryIcon(category.icon)}
                 <p
-                  className={`text-sm mt-1 text-center ${selectedCategory === category.id ? "text-purple-600 font-medium" : "text-gray-700"}`}
+                  className={`text-sm mt-1 text-center ${
+                    selectedCategory === category.id ? "text-purple-600 font-medium" : "text-gray-700"
+                  }`}
                 >
                   {category.name}
                 </p>
@@ -976,17 +989,18 @@ export default function POS() {
                       src={product.main_image_url || "/placeholder.svg?height=160&width=160"}
                       alt={product.name}
                       fill
-                      className="object-contain"
+                      className={`object-contain ${!isProductAvailable(product.id) ? "opacity-50" : ""}`}
                     />
+                    {!isProductAvailable(product.id) && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="bg-red-600 text-white px-2 py-1 text-xs font-bold rounded">OUT OF STOCK</span>
+                      </div>
+                    )}
                   </div>
                   <div className="p-3">
                     <h3 className="font-medium text-gray-900 line-clamp-1">{product.name}</h3>
                     <div className="flex flex-wrap gap-2 mt-1">
-                      <div className="text-xs px-2 py-1 rounded-full inline-block bg-green-100 text-green-800">
-                        {product.quantity !== undefined && product.quantity > 0
-                          ? `${product.quantity} in stock`
-                          : "Out of stock"}
-                      </div>
+                      <ProductStockBadge productId={product.id} />
                       <div className="text-xs px-2 py-1 rounded-full inline-block bg-purple-100 text-purple-800">
                         {product.category || "Uncategorized"}
                       </div>
@@ -1007,8 +1021,12 @@ export default function POS() {
                         variant="ghost"
                         size="icon"
                         onClick={() => handleQuantityChange(product.id, 1)}
-                        className="text-purple-600 p-1 rounded-md hover:bg-purple-100"
-                        disabled={product.quantity !== undefined && quantities[product.id] >= product.quantity}
+                        className={`p-1 rounded-md ${
+                          !isProductAvailable(product.id, undefined, quantities[product.id] + 1)
+                            ? "text-gray-400 cursor-not-allowed"
+                            : "text-purple-600 hover:bg-purple-100"
+                        }`}
+                        disabled={!isProductAvailable(product.id, undefined, quantities[product.id] + 1)}
                       >
                         <PlusCircle size={20} />
                       </Button>
@@ -1292,8 +1310,17 @@ export default function POS() {
                         src={product.main_image_url || "/placeholder.svg?height=96&width=96"}
                         alt={product.name}
                         fill
-                        className="object-cover"
+                        className={`object-cover ${
+                          product.quantity === undefined || product.quantity <= 0 ? "opacity-50" : ""
+                        }`}
                       />
+                      {(product.quantity === undefined || product.quantity <= 0) && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="bg-red-600 text-white px-2 py-1 text-xs font-bold rounded">
+                            OUT OF STOCK
+                          </span>
+                        </div>
+                      )}
                     </div>
                     <div className="p-2">
                       <h3 className="font-medium text-gray-900 text-sm line-clamp-1">{product.name}</h3>
@@ -1318,8 +1345,16 @@ export default function POS() {
                           variant="ghost"
                           size="sm"
                           onClick={() => handleQuantityChange(product.id, 1)}
-                          className="text-purple-600 p-1 rounded-md hover:bg-purple-100 h-8 w-8"
-                          disabled={product.quantity !== undefined && quantities[product.id] >= product.quantity}
+                          className={`p-1 rounded-md h-8 w-8 ${
+                            product.quantity === undefined || product.quantity <= 0
+                              ? "text-gray-400 cursor-not-allowed"
+                              : "text-purple-600 hover:bg-purple-100"
+                          }`}
+                          disabled={
+                            product.quantity === undefined ||
+                            product.quantity <= 0 ||
+                            quantities[product.id] >= product.quantity
+                          }
                         >
                           <PlusCircle size={16} />
                         </Button>
@@ -1349,4 +1384,3 @@ export default function POS() {
     </div>
   )
 }
-

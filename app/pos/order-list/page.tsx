@@ -698,10 +698,6 @@ export default function OrderList() {
             <ClipboardList size={20} />
             <span className="text-xs">Order List</span>
           </Link>
-          <Link href="/pos/history" className="flex flex-col items-center text-gray-500">
-            <History size={20} />
-            <span className="text-xs">History</span>
-          </Link>
           <Link href="/pos/reports" className="flex flex-col items-center text-gray-500">
             <BarChart2 size={20} />
             <span className="text-xs">Report</span>
