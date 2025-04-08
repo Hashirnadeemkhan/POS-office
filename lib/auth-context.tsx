@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
+import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { type ReactNode } from "react"; // Added this import
 import { onAuthStateChanged, User, getIdToken as getFirebaseIdToken, signOut } from "firebase/auth";
 import { doc, getDoc, deleteDoc } from "firebase/firestore";
 import { adminAuth, posAuth, adminDb, posDb } from "@/firebase/client";
@@ -70,7 +71,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [authState.userId, authState.authType, router]);
 
-  // Check for impersonation session on the client side
   const checkImpersonationSession = useCallback(async () => {
     const cookies = document.cookie.split(";").reduce((acc, cookie) => {
       const [name, value] = cookie.trim().split("=");
@@ -96,6 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (restaurantDoc.exists()) {
             const restaurantData = restaurantDoc.data();
             if (!restaurantData.isActive) {
+              console.log("checkImpersonationSession: Restaurant is deactivated, logging out");
               await logout();
               return false;
             }
@@ -103,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               isAuthenticated: true,
               userRole: "restaurant",
               userId: restaurantId,
-              user: null, // No actual user object for impersonation
+              user: null,
               loading: false,
               authType: "restaurant",
             });
@@ -121,6 +122,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const posUnsubscribe = onAuthStateChanged(posAuth, async (user) => {
       if (user) {
         try {
+          const idTokenResult = await user.getIdTokenResult();
+          if (idTokenResult.claims.isImpersonation) {
+            // Impersonation case
+            const restaurantId = user.uid;
+            const restaurantDoc = await getDoc(doc(posDb, "restaurants", restaurantId));
+            if (restaurantDoc.exists() && restaurantDoc.data().isActive) {
+              setAuthState({
+                isAuthenticated: true,
+                userRole: "restaurant",
+                userId: restaurantId,
+                user,
+                loading: false,
+                authType: "restaurant",
+              });
+              return;
+            } else {
+              await logout();
+              return;
+            }
+          }
+
+          // Regular restaurant authentication
           const restaurantDoc = await getDoc(doc(posDb, "restaurants", user.uid));
           if (restaurantDoc.exists()) {
             const restaurantData = restaurantDoc.data();
@@ -143,7 +166,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Check for impersonation session if not authenticated via posAuth
       const isImpersonated = await checkImpersonationSession();
       if (isImpersonated) {
         return;
@@ -200,17 +222,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } else if (isAdminRoute && authState.authType === "restaurant") {
           router.push("/pos/dashboard");
         } else if (isPosRoute && authState.authType === "admin") {
-          router.push("/admin/dashboard");
+          // Allow admin/superadmin to stay on /pos routes
+          return;
         }
-      } else if (isAdminRoute || isPosRoute) {
+      } else if (isAdminRoute || (isPosRoute && authState.userRole !== "admin" && authState.userRole !== "superadmin")) {
         router.push(isAdminRoute ? "/admin/login" : "/pos/login");
       }
     }
-  }, [authState.isAuthenticated, authState.authType, authState.loading, pathname, router]);
+  }, [authState.isAuthenticated, authState.authType, authState.loading, authState.userRole, pathname, router]);
 
   const getIdToken = async (): Promise<string> => {
     if (!authState.user) {
-      // For impersonation sessions, use the session token as a fallback
       const cookies = document.cookie.split(";").reduce((acc, cookie) => {
         const [name, value] = cookie.trim().split("=");
         acc[name] = value;
@@ -218,7 +240,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }, {} as Record<string, string>);
       const sessionToken = cookies["impersonationSessionToken"];
       if (sessionToken) {
-        return sessionToken; // Use the session token for impersonation
+        return sessionToken;
       }
       throw new Error("No authenticated user");
     }

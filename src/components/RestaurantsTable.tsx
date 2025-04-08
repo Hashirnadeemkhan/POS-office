@@ -12,6 +12,8 @@ import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { PlusCircle, Eye, Pencil, Trash2, Power, PowerOff, MoreHorizontal } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { signInWithCustomToken } from "firebase/auth";
+import { posAuth } from "@/firebase/client";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -88,7 +90,7 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
       console.log("handleImpersonate: Starting impersonation for restaurantId:", restaurantId);
       const idToken = await getIdToken();
       console.log("handleImpersonate: Fetched ID token:", idToken);
-  
+
       const response = await fetch("/api/impersonate", {
         method: "POST",
         headers: {
@@ -97,17 +99,20 @@ export default function RestaurantsTable({ showViewAllButton = true }: Restauran
         },
         body: JSON.stringify({ restaurantId }),
       });
-  
+
       console.log("handleImpersonate: Response status:", response.status);
       if (!response.ok) {
         const errorData = await response.json();
         console.error("handleImpersonate: Impersonation failed:", errorData);
         throw new Error(errorData.error || "Failed to initiate impersonation");
       }
-  
-      const { sessionToken, restaurantId: returnedRestaurantId } = await response.json();
-      console.log("handleImpersonate: Impersonation successful, sessionToken:", sessionToken, "restaurantId:", returnedRestaurantId);
-  
+
+      const { customToken } = await response.json();
+      console.log("handleImpersonate: Impersonation successful, customToken:", customToken);
+
+      // Sign in with the custom token on the POS client
+      await signInWithCustomToken(posAuth, customToken);
+
       console.log("handleImpersonate: Redirecting to /pos/dashboard...");
       window.location.href = "/pos/dashboard";
     } catch (error) {
